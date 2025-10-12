@@ -1,0 +1,45 @@
+[
+  {
+    "id": "1",
+    "username": "alex_dev",
+    "content": "Just launched my new React project! 🚀 Excited to share it with the community.",
+    "timestamp": 1703097600000,
+    "likes": ["sarah_designer", "mike_coder"],
+    "dislikes": [],
+    "comments": [
+      {
+        "id": "c1",
+        "username": "sarah_designer",
+        "content": "Congratulations! Can't wait to check it out.",
+        "timestamp": 1703098200000,
+        "likes": []
+      }
+    ]
+  },
+  {
+    "id": "2",
+    "username": "sarah_designer",
+    "content": "Working on some new UI designs. Love the creative process! ✨",
+    "timestamp": 1703084000000,
+    "likes": ["alex_dev"],
+    "dislikes": [],
+    "comments": []
+  },
+  {
+    "id": "3",
+    "username": "mike_coder",
+    "content": "Anyone else excited about the new JavaScript features? The async/await improvements are game-changing!",
+    "timestamp": 1703070400000,
+    "likes": ["alex_dev", "sarah_designer"],
+    "dislikes": [],
+    "comments": [
+      {
+        "id": "c2",
+        "username": "alex_dev",
+        "content": "The performance improvements are incredible.",
+        "timestamp": 1703071000000,
+        "likes": []
+      }
+    ]
+  }
+]
