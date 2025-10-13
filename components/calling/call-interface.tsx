@@ -1,79 +1,66 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { Card, CardContent } from "@/components/ui/card"
+import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Badge } from "@/components/ui/badge"
-import { PhoneOff, Mic, MicOff, Video, VideoOff, Volume2, VolumeX, Minimize2 } from "lucide-react"
-import { useUser } from "@/context/user-context"
-import { persistentStorage } from "@/lib/persistent-storage"
-import type { CallData } from "@/lib/types"
+import { Card, CardContent } from "@/components/ui/card"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { PhoneOff, Mic, MicOff, Camera, CameraOff, Volume2, VolumeX, Maximize, Minimize } from "lucide-react"
 
-export default function CallInterface() {
-  const { username } = useUser()
-  const [activeCall, setActiveCall] = useState<CallData | null>(null)
-  const [callDuration, setCallDuration] = useState(0)
+interface CallInterfaceProps {
+  recipientUsername: string
+  callType: "voice" | "video"
+  onEndCall: () => void
+}
+
+export default function CallInterface({ recipientUsername, callType, onEndCall }: CallInterfaceProps) {
+  const [callStatus, setCallStatus] = useState<"calling" | "connected" | "ended">("calling")
   const [isMuted, setIsMuted] = useState(false)
-  const [isVideoOn, setIsVideoOn] = useState(true)
+  const [isCameraOn, setIsCameraOn] = useState(callType === "video")
   const [isSpeakerOn, setIsSpeakerOn] = useState(false)
-  const [isMinimized, setIsMinimized] = useState(false)
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  const [callDuration, setCallDuration] = useState(0)
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const remoteVideoRef = useRef<HTMLVideoElement>(null)
+  const callStartTime = useRef<number>(0)
 
+  // Simulate call connection
   useEffect(() => {
-    // Check for active call on mount
-    const currentCall = persistentStorage.getActiveCall()
-    if (currentCall) {
-      setActiveCall(currentCall)
-    }
+    const timer = setTimeout(() => {
+      setCallStatus("connected")
+      callStartTime.current = Date.now()
+    }, 3000)
 
-    // Listen for call state changes
-    const handleCallStateChange = (event: CustomEvent) => {
-      const callData = event.detail as CallData | null
-      setActiveCall(callData)
-
-      if (!callData) {
-        setCallDuration(0)
-        setIsMuted(false)
-        setIsVideoOn(true)
-        setIsSpeakerOn(false)
-        setIsMinimized(false)
-      }
-    }
-
-    window.addEventListener("callStateChanged", handleCallStateChange as EventListener)
-    return () => window.removeEventListener("callStateChanged", handleCallStateChange as EventListener)
+    return () => clearTimeout(timer)
   }, [])
 
+  // Update call duration
   useEffect(() => {
-    let interval: NodeJS.Timeout | null = null
+    let interval: NodeJS.Timeout
 
-    if (activeCall && activeCall.status === "connected") {
+    if (callStatus === "connected") {
       interval = setInterval(() => {
-        const elapsed = Math.floor((Date.now() - activeCall.startTime) / 1000)
-        setCallDuration(elapsed)
+        setCallDuration(Math.floor((Date.now() - callStartTime.current) / 1000))
       }, 1000)
     }
 
     return () => {
       if (interval) clearInterval(interval)
     }
-  }, [activeCall])
+  }, [callStatus])
 
-  const handleEndCall = () => {
-    if (activeCall) {
-      const endedCall = {
-        ...activeCall,
-        status: "ended" as const,
-        endTime: Date.now(),
-      }
-      persistentStorage.saveActiveCall(endedCall)
-
-      // Clear call after a brief moment
-      setTimeout(() => {
-        persistentStorage.clearActiveCall()
-      }, 1000)
+  // Initialize camera for video calls
+  useEffect(() => {
+    if (callType === "video" && callStatus === "connected") {
+      navigator.mediaDevices
+        .getUserMedia({ video: true, audio: true })
+        .then((stream) => {
+          if (videoRef.current) {
+            videoRef.current.srcObject = stream
+          }
+        })
+        .catch((err) => console.error("Error accessing camera:", err))
     }
-  }
+  }, [callType, callStatus])
 
   const formatDuration = (seconds: number) => {
     const mins = Math.floor(seconds / 60)
@@ -81,141 +68,153 @@ export default function CallInterface() {
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`
   }
 
-  const getInitials = (name: string) => {
-    return name
-      .split(" ")
-      .map((word) => word[0])
-      .join("")
-      .toUpperCase()
-      .slice(0, 2)
+  const toggleMute = () => {
+    setIsMuted(!isMuted)
   }
 
-  const getOtherUser = () => {
-    if (!activeCall || !username) return ""
-    return activeCall.caller === username ? activeCall.recipient : activeCall.caller
+  const toggleCamera = () => {
+    setIsCameraOn(!isCameraOn)
   }
 
-  if (!activeCall || !username) return null
+  const toggleSpeaker = () => {
+    setIsSpeakerOn(!isSpeakerOn)
+  }
 
-  const otherUser = getOtherUser()
+  const toggleFullscreen = () => {
+    setIsFullscreen(!isFullscreen)
+  }
 
-  if (isMinimized) {
-    return (
-      <div className="fixed bottom-4 right-4 z-50">
-        <Card className="w-64 bg-gradient-to-r from-blue-500 to-purple-600 text-white border-0">
-          <CardContent className="p-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <Avatar className="h-8 w-8">
-                  <AvatarImage src={persistentStorage.getProfilePhoto(otherUser) || undefined} />
-                  <AvatarFallback className="bg-white/20 text-white">{getInitials(otherUser)}</AvatarFallback>
-                </Avatar>
-                <div>
-                  <p className="font-semibold text-sm">{otherUser}</p>
-                  <p className="text-xs opacity-90">
-                    {activeCall.status === "calling" ? "Calling..." : formatDuration(callDuration)}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center space-x-1">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-8 w-8 p-0 text-white hover:bg-white/20"
-                  onClick={() => setIsMinimized(false)}
-                >
-                  <Minimize2 className="h-4 w-4" />
-                </Button>
-                <Button size="sm" variant="destructive" className="h-8 w-8 p-0" onClick={handleEndCall}>
-                  <PhoneOff className="h-3 w-3" />
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    )
+  const endCall = () => {
+    setCallStatus("ended")
+    onEndCall()
   }
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center">
-      <Card className="w-full max-w-md mx-4 bg-gradient-to-b from-slate-900 to-slate-800 text-white border-slate-700">
-        <CardContent className="p-6 text-center">
-          <div className="flex justify-between items-start mb-6">
-            <Badge variant="secondary" className="bg-green-500/20 text-green-400 border-green-500/30">
-              {activeCall.type === "voice" ? "Voice Call" : "Video Call"}
-            </Badge>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-white hover:bg-white/10"
-              onClick={() => setIsMinimized(true)}
-            >
-              <Minimize2 className="h-4 w-4" />
-            </Button>
-          </div>
+    <div
+      className={`fixed inset-0 z-50 bg-black ${isFullscreen ? "" : "bg-black/90"} flex items-center justify-center`}
+    >
+      <Card className={`${isFullscreen ? "w-full h-full" : "w-full max-w-2xl"} bg-black text-white border-gray-800`}>
+        <CardContent className="p-0 h-full">
+          {callType === "video" && callStatus === "connected" ? (
+            <div className="relative h-full min-h-[500px]">
+              {/* Remote video (main) */}
+              <div className="w-full h-full bg-gray-900 rounded-lg overflow-hidden">
+                <video ref={remoteVideoRef} className="w-full h-full object-cover" autoPlay playsInline />
+                {/* Placeholder for remote video */}
+                <div className="absolute inset-0 flex items-center justify-center bg-gray-800">
+                  <Avatar className="h-32 w-32">
+                    <AvatarFallback className="text-4xl bg-gray-700">
+                      {recipientUsername.substring(0, 2).toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                </div>
+              </div>
 
-          <div className="mb-6">
-            <Avatar className="h-24 w-24 mx-auto mb-4 ring-4 ring-white/20">
-              <AvatarImage src={persistentStorage.getProfilePhoto(otherUser) || undefined} />
-              <AvatarFallback className="bg-gradient-to-r from-blue-500 to-purple-600 text-white text-2xl">
-                {getInitials(otherUser)}
-              </AvatarFallback>
-            </Avatar>
-            <h2 className="text-xl font-semibold mb-2">{otherUser}</h2>
-            <p className="text-slate-300">
-              {activeCall.status === "calling" ? (
-                <span className="animate-pulse">Calling...</span>
-              ) : activeCall.status === "connected" ? (
-                formatDuration(callDuration)
-              ) : (
-                "Call ended"
-              )}
-            </p>
-          </div>
+              {/* Local video (picture-in-picture) */}
+              <div className="absolute top-4 right-4 w-32 h-24 bg-gray-900 rounded-lg overflow-hidden border-2 border-gray-600">
+                <video ref={videoRef} className="w-full h-full object-cover" autoPlay playsInline muted />
+                {!isCameraOn && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-gray-800">
+                    <CameraOff className="h-6 w-6 text-gray-400" />
+                  </div>
+                )}
+              </div>
 
-          {activeCall.status === "connected" && (
-            <div className="flex justify-center space-x-4 mb-6">
+              {/* Call info overlay */}
+              <div className="absolute top-4 left-4 bg-black/50 rounded-lg px-3 py-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                  <span className="text-sm">{recipientUsername}</span>
+                  <span className="text-xs text-gray-300">
+                    {callStatus === "calling" ? "Calling..." : formatDuration(callDuration)}
+                  </span>
+                </div>
+              </div>
+
+              {/* Fullscreen toggle */}
               <Button
-                variant={isMuted ? "destructive" : "secondary"}
-                size="lg"
-                className="rounded-full h-12 w-12 p-0"
-                onClick={() => setIsMuted(!isMuted)}
+                variant="ghost"
+                size="icon"
+                className="absolute top-4 right-40 text-white hover:bg-white/20"
+                onClick={toggleFullscreen}
               >
-                {isMuted ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
+                {isFullscreen ? <Minimize className="h-5 w-5" /> : <Maximize className="h-5 w-5" />}
               </Button>
+            </div>
+          ) : (
+            /* Voice call or calling state */
+            <div className="flex flex-col items-center justify-center h-[500px] p-8">
+              <Avatar className="h-32 w-32 mb-6">
+                <AvatarFallback className="text-4xl bg-gray-700">
+                  {recipientUsername.substring(0, 2).toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
 
-              {activeCall.type === "video" && (
-                <Button
-                  variant={!isVideoOn ? "destructive" : "secondary"}
-                  size="lg"
-                  className="rounded-full h-12 w-12 p-0"
-                  onClick={() => setIsVideoOn(!isVideoOn)}
-                >
-                  {isVideoOn ? <Video className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
-                </Button>
+              <h2 className="text-2xl font-semibold mb-2">{recipientUsername}</h2>
+
+              <div className="flex items-center gap-2 mb-8">
+                {callStatus === "calling" && (
+                  <>
+                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                    <span className="text-gray-300">Calling...</span>
+                  </>
+                )}
+                {callStatus === "connected" && (
+                  <>
+                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                    <span className="text-gray-300">{formatDuration(callDuration)}</span>
+                  </>
+                )}
+              </div>
+
+              {callType === "video" && callStatus === "connected" && (
+                <div className="w-64 h-48 bg-gray-900 rounded-lg mb-6 flex items-center justify-center">
+                  <video ref={videoRef} className="w-full h-full object-cover rounded-lg" autoPlay playsInline muted />
+                  {!isCameraOn && (
+                    <div className="absolute flex items-center justify-center">
+                      <CameraOff className="h-12 w-12 text-gray-400" />
+                    </div>
+                  )}
+                </div>
               )}
-
-              <Button
-                variant={isSpeakerOn ? "default" : "secondary"}
-                size="lg"
-                className="rounded-full h-12 w-12 p-0"
-                onClick={() => setIsSpeakerOn(!isSpeakerOn)}
-              >
-                {isSpeakerOn ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />}
-              </Button>
             </div>
           )}
 
-          <Button variant="destructive" size="lg" className="rounded-full h-14 w-14 p-0" onClick={handleEndCall}>
-            <PhoneOff className="h-6 w-6" />
-          </Button>
+          {/* Call controls */}
+          <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 flex items-center gap-4">
+            <Button
+              variant={isMuted ? "destructive" : "secondary"}
+              size="icon"
+              className="rounded-full h-12 w-12"
+              onClick={toggleMute}
+            >
+              {isMuted ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
+            </Button>
 
-          {activeCall.status === "calling" && (
-            <p className="text-xs text-slate-400 mt-4">
-              {activeCall.caller === username ? "Calling..." : "Incoming call"}
-            </p>
-          )}
+            {callType === "video" && (
+              <Button
+                variant={isCameraOn ? "secondary" : "destructive"}
+                size="icon"
+                className="rounded-full h-12 w-12"
+                onClick={toggleCamera}
+              >
+                {isCameraOn ? <Camera className="h-5 w-5" /> : <CameraOff className="h-5 w-5" />}
+              </Button>
+            )}
+
+            <Button variant="destructive" size="icon" className="rounded-full h-14 w-14" onClick={endCall}>
+              <PhoneOff className="h-6 w-6" />
+            </Button>
+
+            <Button
+              variant={isSpeakerOn ? "default" : "secondary"}
+              size="icon"
+              className="rounded-full h-12 w-12"
+              onClick={toggleSpeaker}
+            >
+              {isSpeakerOn ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />}
+            </Button>
+          </div>
         </CardContent>
       </Card>
     </div>

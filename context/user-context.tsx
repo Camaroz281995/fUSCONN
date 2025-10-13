@@ -1,112 +1,110 @@
 "use client"
 
-import type React from "react"
-import { createContext, useContext, useState, useEffect } from "react"
-import { persistentStorage } from "@/lib/persistent-storage"
-import type { User } from "@/lib/types"
+import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
 
 interface UserContextType {
-  user: User | null
-  username: string | null
+  username: string
+  setUsername: (username: string) => void
   profilePhoto: string | null
-  login: (username: string, password: string) => boolean
-  register: (username: string, email: string, password: string) => boolean
-  logout: () => void
-  setProfilePhoto: (photo: string) => void
+  setProfilePhoto: (url: string | null) => void
+  following: string[]
+  addFollowing: (username: string) => void
+  removeFollowing: (username: string) => void
+  isFollowing: (username: string) => boolean
 }
 
-const UserContext = createContext<UserContextType | undefined>(undefined)
+const UserContext = createContext<UserContextType>({
+  username: "",
+  setUsername: () => {},
+  profilePhoto: null,
+  setProfilePhoto: () => {},
+  following: [],
+  addFollowing: () => {},
+  removeFollowing: () => {},
+  isFollowing: () => false,
+})
 
-export function UserProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null)
+export const useUser = () => useContext(UserContext)
+
+interface UserProviderProps {
+  children: ReactNode
+}
+
+export const UserProvider = ({ children }: UserProviderProps) => {
+  const [username, setUsernameState] = useState("")
   const [profilePhoto, setProfilePhotoState] = useState<string | null>(null)
+  const [following, setFollowing] = useState<string[]>([])
 
+  // Load user data from localStorage on mount
   useEffect(() => {
-    // Check for existing session
-    const savedUser = localStorage.getItem("fuscon_current_user")
-    if (savedUser) {
-      const userData = JSON.parse(savedUser)
-      setUser(userData)
+    if (typeof window !== "undefined") {
+      const storedUsername = localStorage.getItem("username")
+      const storedProfilePhoto = localStorage.getItem("profilePhoto")
+      const storedFollowing = localStorage.getItem("following")
 
-      // Load profile photo
-      const photo = persistentStorage.getProfilePhoto(userData.username)
-      setProfilePhotoState(photo)
+      if (storedUsername) setUsernameState(storedUsername)
+      if (storedProfilePhoto) setProfilePhotoState(storedProfilePhoto)
+      if (storedFollowing) {
+        try {
+          setFollowing(JSON.parse(storedFollowing))
+        } catch (error) {
+          console.error("Error parsing following list:", error)
+        }
+      }
     }
   }, [])
 
-  const login = (username: string, password: string): boolean => {
-    const users = persistentStorage.getUsers()
-    const foundUser = users.find((u) => u.username === username)
-
-    if (foundUser) {
-      setUser(foundUser)
-      localStorage.setItem("fuscon_current_user", JSON.stringify(foundUser))
-
-      // Load profile photo
-      const photo = persistentStorage.getProfilePhoto(username)
-      setProfilePhotoState(photo)
-
-      return true
-    }
-    return false
+  // Save username to localStorage when it changes
+  const setUsername = (newUsername: string) => {
+    setUsernameState(newUsername)
+    localStorage.setItem("username", newUsername)
   }
 
-  const register = (username: string, email: string, password: string): boolean => {
-    const users = persistentStorage.getUsers()
-    const existingUser = users.find((u) => u.username === username || u.email === email)
-
-    if (existingUser) {
-      return false
+  // Save profile photo to localStorage when it changes
+  const setProfilePhoto = (url: string | null) => {
+    setProfilePhotoState(url)
+    if (url) {
+      localStorage.setItem("profilePhoto", url)
+    } else {
+      localStorage.removeItem("profilePhoto")
     }
-
-    const newUser: User = {
-      id: Date.now().toString(),
-      username,
-      email,
-      createdAt: Date.now(),
-    }
-
-    persistentStorage.saveUser(newUser)
-    setUser(newUser)
-    localStorage.setItem("fuscon_current_user", JSON.stringify(newUser))
-
-    return true
   }
 
-  const logout = () => {
-    setUser(null)
-    setProfilePhotoState(null)
-    localStorage.removeItem("fuscon_current_user")
+  // Add a user to following list
+  const addFollowing = (userToFollow: string) => {
+    if (userToFollow === username || following.includes(userToFollow)) return
+
+    const newFollowing = [...following, userToFollow]
+    setFollowing(newFollowing)
+    localStorage.setItem("following", JSON.stringify(newFollowing))
   }
 
-  const setProfilePhoto = (photo: string) => {
-    setProfilePhotoState(photo)
-    if (user) {
-      persistentStorage.setProfilePhoto(user.username, photo)
-    }
+  // Remove a user from following list
+  const removeFollowing = (userToUnfollow: string) => {
+    const newFollowing = following.filter((user) => user !== userToUnfollow)
+    setFollowing(newFollowing)
+    localStorage.setItem("following", JSON.stringify(newFollowing))
+  }
+
+  // Check if a user is being followed
+  const isFollowing = (user: string) => {
+    return following.includes(user)
   }
 
   return (
     <UserContext.Provider
       value={{
-        user,
-        username: user?.username || null,
+        username,
+        setUsername,
         profilePhoto,
-        login,
-        register,
-        logout,
         setProfilePhoto,
+        following,
+        addFollowing,
+        removeFollowing,
+        isFollowing,
       }}
     >
       {children}
     </UserContext.Provider>
   )
-}
-
-export function useUser() {
-  const context = useContext(UserContext)
-  if (context === undefined) {
-    throw new Error("useUser must be used within a UserProvider")
-  }
-  return context
 }

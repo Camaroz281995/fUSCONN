@@ -1,26 +1,34 @@
-import type React from "react"
-import type { Metadata } from "next"
-import { Inter } from "next/font/google"
-import "./globals.css"
-import { UserProvider } from "@/context/user-context"
-
-const inter = Inter({ subsets: ["latin"] })
+import type { Metadata } from 'next'
+import { GeistSans } from 'geist/font/sans'
+import { GeistMono } from 'geist/font/mono'
+import { Analytics } from '@vercel/analytics/next'
+import './globals.css'
 
 export const metadata: Metadata = {
-  title: "Fuscon",
-  description: "Connect, Share, Explore with P2P Technology",
-    generator: 'v0.app'
+  title: 'v0 App',
+  description: 'Created with v0',
+  generator: 'v0.app',
 }
 
 export default function RootLayout({
   children,
-}: {
+}: Readonly<{
   children: React.ReactNode
-}) {
+}>) {
   return (
     <html lang="en">
-      <body className={inter.className}>
-        <UserProvider>{children}</UserProvider>
+      <head>
+        <style>{`
+html {
+  font-family: ${GeistSans.style.fontFamily};
+  --font-sans: ${GeistSans.variable};
+  --font-mono: ${GeistMono.variable};
+}
+        `}</style>
+      </head>
+      <body>
+        {children}
+        <Analytics />
       </body>
     </html>
   )

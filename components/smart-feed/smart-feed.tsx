@@ -3,334 +3,213 @@
 import { useState, useEffect } from "react"
 import { useUser } from "@/context/user-context"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Badge } from "@/components/ui/badge"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Sparkles, TrendingUp, Users, Clock, Search } from "lucide-react"
+import PostList from "@/components/post/post-list"
+import type { Post } from "@/lib/types"
 import { persistentStorage } from "@/lib/persistent-storage"
-import { generateId, formatTimeAgo } from "@/lib/utils"
-import type { Post, Comment } from "@/lib/types"
-import { Heart, MessageCircle, Share, Search, ThumbsUp, ThumbsDown, Send, Sparkles, TrendingUp } from "lucide-react"
+import StoriesBar from "@/components/stories/stories-bar"
 
 export default function SmartFeed() {
-  const { username, profilePhoto } = useUser()
+  const { username, following } = useUser()
   const [posts, setPosts] = useState<Post[]>([])
-  const [searchTerm, setSearchTerm] = useState("")
-  const [filterType, setFilterType] = useState<"all" | "trending" | "recent">("all")
-  const [showComments, setShowComments] = useState<string | null>(null)
-  const [newComment, setNewComment] = useState("")
-  const [likeAnimations, setLikeAnimations] = useState<Set<string>>(new Set())
+  const [filteredPosts, setFilteredPosts] = useState<Post[]>([])
+  const [loading, setLoading] = useState(true)
+  const [activeTab, setActiveTab] = useState("for-you")
+  const [searchQuery, setSearchQuery] = useState("")
+
+  const fetchPosts = async () => {
+    try {
+      setLoading(true)
+
+      // Get posts from persistent storage
+      const allPosts = persistentStorage.getPosts()
+
+      // Sort posts by timestamp (newest first) to ensure new posts appear at the top
+      const sortedPosts = allPosts.sort((a, b) => b.timestamp - a.timestamp)
+
+      setPosts(sortedPosts)
+
+      // Apply initial filtering based on active tab
+      filterPosts(sortedPosts, activeTab)
+    } catch (error) {
+      console.error("Error fetching posts for smart feed:", error)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   useEffect(() => {
-    loadPosts()
-  }, [])
+    fetchPosts()
 
-  const loadPosts = () => {
-    const allPosts = persistentStorage.getPosts()
-    setPosts(allPosts.sort((a, b) => b.timestamp - a.timestamp))
-  }
-
-  const handleLike = (postId: string) => {
-    if (!username) return
-
-    const updatedPosts = posts.map((post) => {
-      if (post.id === postId) {
-        const likes = post.likes || []
-        const dislikes = post.dislikes || []
-
-        if (likes.includes(username)) {
-          return { ...post, likes: likes.filter((u) => u !== username) }
-        } else {
-          // Add like animation
-          setLikeAnimations((prev) => new Set([...prev, postId]))
-          setTimeout(() => {
-            setLikeAnimations((prev) => {
-              const newSet = new Set(prev)
-              newSet.delete(postId)
-              return newSet
-            })
-          }, 1000)
-
-          return {
-            ...post,
-            likes: [...likes, username],
-            dislikes: dislikes.filter((u) => u !== username),
-          }
-        }
-      }
-      return post
-    })
-
-    setPosts(updatedPosts)
-    persistentStorage.savePosts(updatedPosts)
-  }
-
-  const handleDislike = (postId: string) => {
-    if (!username) return
-
-    const updatedPosts = posts.map((post) => {
-      if (post.id === postId) {
-        const likes = post.likes || []
-        const dislikes = post.dislikes || []
-
-        if (dislikes.includes(username)) {
-          return { ...post, dislikes: dislikes.filter((u) => u !== username) }
-        } else {
-          return {
-            ...post,
-            dislikes: [...dislikes, username],
-            likes: likes.filter((u) => u !== username),
-          }
-        }
-      }
-      return post
-    })
-
-    setPosts(updatedPosts)
-    persistentStorage.savePosts(updatedPosts)
-  }
-
-  const handleComment = (postId: string) => {
-    if (!username || !newComment.trim()) return
-
-    const comment: Comment = {
-      id: generateId(),
-      username,
-      content: newComment.trim(),
-      timestamp: Date.now(),
+    // Listen for new posts being created
+    const handleNewPost = () => {
+      fetchPosts()
     }
 
-    const updatedPosts = posts.map((post) => {
-      if (post.id === postId) {
-        return { ...post, comments: [...(post.comments || []), comment] }
-      }
-      return post
-    })
+    window.addEventListener("newPostCreated", handleNewPost)
 
-    setPosts(updatedPosts)
-    persistentStorage.savePosts(updatedPosts)
-    setNewComment("")
-  }
+    // Refresh posts every 30 seconds
+    const interval = setInterval(fetchPosts, 30000)
 
-  const getFilteredPosts = () => {
-    let filtered = posts
+    return () => {
+      window.removeEventListener("newPostCreated", handleNewPost)
+      clearInterval(interval)
+    }
+  }, [username, following])
 
-    if (searchTerm) {
+  useEffect(() => {
+    filterPosts(posts, activeTab)
+  }, [activeTab, posts, following, searchQuery])
+
+  const filterPosts = (allPosts: Post[], tab: string) => {
+    let filtered = [...allPosts]
+
+    // Apply search filter if query exists
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase()
       filtered = filtered.filter(
-        (post) =>
-          post.content.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          post.username.toLowerCase().includes(searchTerm.toLowerCase()),
+        (post) => post.content.toLowerCase().includes(query) || post.username.toLowerCase().includes(query),
       )
     }
 
-    switch (filterType) {
+    // Apply tab-specific filtering
+    switch (tab) {
+      case "for-you":
+        // Show all posts, prioritize posts from followed users
+        filtered = filtered.sort((a, b) => {
+          const aScore = calculateRelevanceScore(a)
+          const bScore = calculateRelevanceScore(b)
+          return bScore - aScore
+        })
+        break
+
+      case "following":
+        // Show posts from users the current user is following, but if none, show all posts
+        if (following.length > 0) {
+          const followingPosts = filtered.filter((post) => following.includes(post.username))
+          filtered = followingPosts.length > 0 ? followingPosts : filtered
+        }
+        break
+
       case "trending":
-        return filtered.sort(
-          (a, b) =>
-            (b.likes?.length || 0) + (b.comments?.length || 0) - ((a.likes?.length || 0) + (a.comments?.length || 0)),
-        )
+        // Sort by engagement (likes + comments)
+        filtered = filtered.sort((a, b) => {
+          const aEngagement = (a.likes?.length || 0) + (a.comments?.length || 0)
+          const bEngagement = (b.likes?.length || 0) + (b.comments?.length || 0)
+          return bEngagement - aEngagement
+        })
+        break
+
       case "recent":
-        return filtered.sort((a, b) => b.timestamp - a.timestamp)
-      default:
-        return filtered
+        // Sort by timestamp (newest first)
+        filtered = filtered.sort((a, b) => b.timestamp - a.timestamp)
+        break
     }
+
+    setFilteredPosts(filtered)
   }
 
-  const filteredPosts = getFilteredPosts()
+  const calculateRelevanceScore = (post: Post): number => {
+    let score = 0
+
+    // Posts from followed users get a boost
+    if (following.includes(post.username)) {
+      score += 50
+    }
+
+    // Recent posts get a boost
+    const hoursSincePosted = (Date.now() - post.timestamp) / (1000 * 60 * 60)
+    if (hoursSincePosted < 24) {
+      score += Math.max(0, 24 - hoursSincePosted)
+    }
+
+    // Posts with more engagement get a boost
+    score += (post.likes?.length || 0) * 2
+    score += (post.comments?.length || 0) * 3
+
+    return score
+  }
+
+  const handlePostUpdated = () => {
+    fetchPosts()
+  }
 
   return (
-    <div className="space-y-4">
-      {/* Header */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <Sparkles className="h-5 w-5" />
-            SmartFeed
-          </CardTitle>
-          <div className="space-y-3">
-            <div className="relative">
-              <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search posts..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
-              />
-            </div>
-            <div className="flex gap-2">
-              <Button
-                variant={filterType === "all" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setFilterType("all")}
-                className="flex-1"
-              >
-                All
-              </Button>
-              <Button
-                variant={filterType === "trending" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setFilterType("trending")}
-                className="flex-1"
-              >
-                <TrendingUp className="h-3 w-3 mr-1" />
-                Trending
-              </Button>
-              <Button
-                variant={filterType === "recent" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setFilterType("recent")}
-                className="flex-1"
-              >
-                Recent
-              </Button>
-            </div>
-          </div>
-        </CardHeader>
-      </Card>
-
-      {/* Posts */}
-      <div className="space-y-4">
-        {filteredPosts.length === 0 ? (
-          <Card>
-            <CardContent className="text-center py-8">
-              <Sparkles className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <p className="text-muted-foreground">No posts found. Be the first to share something!</p>
-            </CardContent>
-          </Card>
-        ) : (
-          filteredPosts.map((post) => (
-            <Card key={post.id} className="relative overflow-hidden">
-              {likeAnimations.has(post.id) && (
-                <div className="absolute inset-0 pointer-events-none z-10 flex items-center justify-center">
-                  <Heart className="h-16 w-16 text-red-500 animate-float" fill="currentColor" />
-                </div>
-              )}
-
-              <CardHeader className="pb-3">
-                <div className="flex items-start gap-3">
-                  <Avatar className="h-10 w-10">
-                    <AvatarImage src={profilePhoto || undefined} />
-                    <AvatarFallback className="text-sm">{post.username.charAt(0).toUpperCase()}</AvatarFallback>
-                  </Avatar>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="font-semibold text-sm">{post.username}</p>
-                      <Badge variant="secondary" className="text-xs">
-                        {formatTimeAgo(post.timestamp)}
-                      </Badge>
-                    </div>
-                  </div>
-                </div>
-              </CardHeader>
-
-              <CardContent className="pt-0 space-y-3">
-                <p className="text-sm leading-relaxed">{post.content}</p>
-
-                {post.image && (
-                  <div className="rounded-lg overflow-hidden">
-                    <img
-                      src={post.image || "/placeholder.svg"}
-                      alt="Post image"
-                      className="w-full h-auto max-h-64 object-cover"
-                    />
-                  </div>
-                )}
-
-                {post.video && (
-                  <div className="rounded-lg overflow-hidden">
-                    <video src={post.video} controls className="w-full h-auto max-h-64" />
-                  </div>
-                )}
-
-                {/* Actions */}
-                <div className="flex items-center justify-between pt-2 border-t">
-                  <div className="flex items-center gap-4">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleLike(post.id)}
-                      className={`gap-1 ${post.likes?.includes(username || "") ? "text-red-500" : ""}`}
-                    >
-                      <ThumbsUp className="h-4 w-4" />
-                      <span className="text-xs">{post.likes?.length || 0}</span>
-                    </Button>
-
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleDislike(post.id)}
-                      className={`gap-1 ${post.dislikes?.includes(username || "") ? "text-blue-500" : ""}`}
-                    >
-                      <ThumbsDown className="h-4 w-4" />
-                      <span className="text-xs">{post.dislikes?.length || 0}</span>
-                    </Button>
-
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setShowComments(showComments === post.id ? null : post.id)}
-                      className="gap-1"
-                    >
-                      <MessageCircle className="h-4 w-4" />
-                      <span className="text-xs">{post.comments?.length || 0}</span>
-                    </Button>
-                  </div>
-
-                  <Button variant="ghost" size="sm">
-                    <Share className="h-4 w-4" />
-                  </Button>
-                </div>
-
-                {/* Comments Section */}
-                {showComments === post.id && (
-                  <div className="space-y-3 pt-3 border-t">
-                    {post.comments?.map((comment) => (
-                      <div key={comment.id} className="flex gap-2">
-                        <Avatar className="h-6 w-6">
-                          <AvatarFallback className="text-xs">
-                            {comment.username.charAt(0).toUpperCase()}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="flex-1 bg-muted rounded-lg p-2">
-                          <div className="flex items-center gap-2 mb-1">
-                            <p className="font-medium text-xs">{comment.username}</p>
-                            <span className="text-xs text-muted-foreground">{formatTimeAgo(comment.timestamp)}</span>
-                          </div>
-                          <p className="text-xs">{comment.content}</p>
-                        </div>
-                      </div>
-                    ))}
-
-                    {/* Add Comment */}
-                    <div className="flex gap-2">
-                      <Avatar className="h-6 w-6">
-                        <AvatarImage src={profilePhoto || undefined} />
-                        <AvatarFallback className="text-xs">{username?.charAt(0).toUpperCase()}</AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1 flex gap-2">
-                        <Input
-                          placeholder="Add a comment..."
-                          value={newComment}
-                          onChange={(e) => setNewComment(e.target.value)}
-                          className="text-sm"
-                          onKeyPress={(e) => {
-                            if (e.key === "Enter") {
-                              handleComment(post.id)
-                            }
-                          }}
-                        />
-                        <Button size="sm" onClick={() => handleComment(post.id)} disabled={!newComment.trim()}>
-                          <Send className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          ))
-        )}
+    <Card className="card-transparent">
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center">
+          <Sparkles className="h-5 w-5 mr-2" />
+          Smart Feed
+        </CardTitle>
+      </CardHeader>
+      <div className="px-4 pb-3">
+        <StoriesBar />
       </div>
-    </div>
+      <CardContent className="p-0">
+        <div className="px-4 pb-3">
+          <div className="relative">
+            <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search posts..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-8"
+            />
+          </div>
+        </div>
+
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="grid grid-cols-4 mb-4 mx-4">
+            <TabsTrigger value="for-you">
+              <Sparkles className="h-4 w-4 mr-1 md:mr-2" />
+              <span className="hidden md:inline">For You</span>
+              <span className="md:hidden">You</span>
+            </TabsTrigger>
+            <TabsTrigger value="following">
+              <Users className="h-4 w-4 mr-1 md:mr-2" />
+              <span className="hidden md:inline">Following</span>
+              <span className="md:hidden">Follow</span>
+            </TabsTrigger>
+            <TabsTrigger value="trending">
+              <TrendingUp className="h-4 w-4 mr-1 md:mr-2" />
+              <span className="hidden md:inline">Trending</span>
+              <span className="md:hidden">Trend</span>
+            </TabsTrigger>
+            <TabsTrigger value="recent">
+              <Clock className="h-4 w-4 mr-1 md:mr-2" />
+              <span className="hidden md:inline">Recent</span>
+              <span className="md:hidden">New</span>
+            </TabsTrigger>
+          </TabsList>
+
+          <ScrollArea className="h-[calc(100vh-300px)]">
+            <div className="px-4 pb-4">
+              {loading ? (
+                <div className="text-center py-8">Loading posts...</div>
+              ) : filteredPosts.length === 0 ? (
+                <div className="text-center py-8">
+                  {activeTab === "following" && following.length === 0 ? (
+                    <div>
+                      <p className="mb-4">You're not following anyone yet</p>
+                      <Button variant="outline" onClick={() => setActiveTab("for-you")}>
+                        Discover users to follow
+                      </Button>
+                    </div>
+                  ) : (
+                    <p>No posts found</p>
+                  )}
+                </div>
+              ) : (
+                <PostList posts={filteredPosts} onCommentAdded={fetchPosts} onPostUpdated={handlePostUpdated} />
+              )}
+            </div>
+          </ScrollArea>
+        </Tabs>
+      </CardContent>
+    </Card>
   )
 }

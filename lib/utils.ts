@@ -6,26 +6,37 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export function generateId(): string {
-  return Date.now().toString(36) + Math.random().toString(36).substr(2)
+  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
 }
 
-export function generateInviteCode(): string {
-  return Math.random().toString(36).substr(2, 6).toUpperCase()
-}
-
-export function formatTime(timestamp: number): string {
+export function formatDate(timestamp: number): string {
   const now = Date.now()
   const diff = now - timestamp
-  const minutes = Math.floor(diff / 60000)
-  const hours = Math.floor(diff / 3600000)
-  const days = Math.floor(diff / 86400000)
 
-  if (days > 0) return `${days}d ago`
-  if (hours > 0) return `${hours}h ago`
-  if (minutes > 0) return `${minutes}m ago`
-  return "Just now"
-}
+  // Less than a minute
+  if (diff < 60 * 1000) {
+    return "Just now"
+  }
 
-export function formatTimeAgo(timestamp: number): string {
-  return formatTime(timestamp)
+  // Less than an hour
+  if (diff < 60 * 60 * 1000) {
+    const minutes = Math.floor(diff / (60 * 1000))
+    return `${minutes}m ago`
+  }
+
+  // Less than a day
+  if (diff < 24 * 60 * 60 * 1000) {
+    const hours = Math.floor(diff / (60 * 60 * 1000))
+    return `${hours}h ago`
+  }
+
+  // Less than a week
+  if (diff < 7 * 24 * 60 * 60 * 1000) {
+    const days = Math.floor(diff / (24 * 60 * 60 * 1000))
+    return `${days}d ago`
+  }
+
+  // Format as date
+  const date = new Date(timestamp)
+  return date.toLocaleDateString()
 }

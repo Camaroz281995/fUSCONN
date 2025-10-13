@@ -6,201 +6,287 @@ import { useState } from "react"
 import { useUser } from "@/context/user-context"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { Label } from "@/components/ui/label"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { persistentStorage } from "@/lib/persistent-storage"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { AlertCircle, DollarSign, MapPin, Phone, Mail, Home } from "lucide-react"
+import PhotoUploadField from "@/components/photo/photo-upload-field"
 import { generateId } from "@/lib/utils"
+import { persistentStorage } from "@/lib/persistent-storage"
 import type { MarketplaceListing } from "@/lib/types"
-import { Upload, X } from "lucide-react"
 
 interface CreateListingFormProps {
-  onSuccess: () => void
+  onListingCreated: () => void
 }
 
-export default function CreateListingForm({ onSuccess }: CreateListingFormProps) {
+const CATEGORIES = [
+  "Electronics",
+  "Furniture",
+  "Clothing",
+  "Books",
+  "Sports",
+  "Collectibles",
+  "Vehicles",
+  "Real Estate",
+  "Services",
+  "Other",
+]
+
+export default function CreateListingForm({ onListingCreated }: CreateListingFormProps) {
   const { username } = useUser()
   const [title, setTitle] = useState("")
   const [description, setDescription] = useState("")
   const [price, setPrice] = useState("")
   const [category, setCategory] = useState("")
-  const [condition, setCondition] = useState<"new" | "used" | "refurbished">("used")
-  const [images, setImages] = useState<string[]>([])
+  const [location, setLocation] = useState("")
+  const [contactPhone, setContactPhone] = useState("")
+  const [contactEmail, setContactEmail] = useState("")
+  const [contactAddress, setContactAddress] = useState("")
+  const [imageUrl, setImageUrl] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [error, setError] = useState("")
+  const [success, setSuccess] = useState(false)
 
-  const categories = ["electronics", "clothing", "books", "home", "sports", "other"]
-
-  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files
-    if (files) {
-      Array.from(files).forEach((file) => {
-        const reader = new FileReader()
-        reader.onload = (e) => {
-          const result = e.target?.result as string
-          setImages((prev) => [...prev, result])
-        }
-        reader.readAsDataURL(file)
-      })
-    }
-  }
-
-  const removeImage = (index: number) => {
-    setImages((prev) => prev.filter((_, i) => i !== index))
+  const handlePhotoUploaded = (url: string) => {
+    setImageUrl(url)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!username || !title.trim() || !description.trim() || !price || !category) return
 
-    setIsSubmitting(true)
+    if (!username) {
+      setError("Please set your username in the Profile tab")
+      return
+    }
+
+    if (!title.trim()) {
+      setError("Title is required")
+      return
+    }
+
+    if (!description.trim()) {
+      setError("Description is required")
+      return
+    }
+
+    if (!price.trim() || isNaN(Number.parseFloat(price))) {
+      setError("Valid price is required")
+      return
+    }
+
+    if (!category) {
+      setError("Category is required")
+      return
+    }
+
+    if (!location.trim()) {
+      setError("Location is required")
+      return
+    }
+
+    if (!contactPhone.trim() && !contactEmail.trim() && !contactAddress.trim()) {
+      setError("At least one contact method is required")
+      return
+    }
+
+    if (!imageUrl) {
+      setError("Please upload an image for your listing")
+      return
+    }
 
     try {
-      const listings = persistentStorage.getMarketplaceListings()
+      setIsSubmitting(true)
+      setError("")
+      setSuccess(false)
 
-      const newListing: MarketplaceListing = {
+      const listing: MarketplaceListing = {
         id: generateId(),
-        title: title.trim(),
-        description: description.trim(),
+        title,
+        description,
         price: Number.parseFloat(price),
-        seller: username,
-        images,
         category,
-        condition,
-        createdAt: Date.now(),
-        sold: false,
+        location,
+        imageUrl,
+        sellerUsername: username,
+        sellerJoinDate: Date.now() - 30 * 24 * 60 * 60 * 1000, // Mock join date (30 days ago)
+        timestamp: Date.now(),
+        contactPhone: contactPhone.trim() || null,
+        contactEmail: contactEmail.trim() || null,
+        contactAddress: contactAddress.trim() || null,
+        status: "active",
       }
 
-      listings.unshift(newListing)
-      persistentStorage.saveMarketplaceListings(listings)
+      // Save to persistent storage
+      persistentStorage.saveMarketplaceListing(listing)
 
-      onSuccess()
-    } catch (error) {
-      console.error("Error creating listing:", error)
+      setSuccess(true)
+
+      // Reset form after a short delay
+      setTimeout(() => {
+        setTitle("")
+        setDescription("")
+        setPrice("")
+        setCategory("")
+        setLocation("")
+        setContactPhone("")
+        setContactEmail("")
+        setContactAddress("")
+        setImageUrl("")
+        setSuccess(false)
+        onListingCreated()
+      }, 2000)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An error occurred")
     } finally {
       setIsSubmitting(false)
     }
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="space-y-2">
-        <Label htmlFor="title">Title</Label>
-        <Input
-          id="title"
-          placeholder="What are you selling?"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          required
-        />
-      </div>
+    <Card>
+      <CardHeader>
+        <CardTitle>Create Listing</CardTitle>
+        <CardDescription>List an item or service for sale</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="listing-title">Title</Label>
+            <Input
+              id="listing-title"
+              placeholder="What are you selling?"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              disabled={isSubmitting}
+            />
+          </div>
 
-      <div className="space-y-2">
-        <Label htmlFor="description">Description</Label>
-        <Textarea
-          id="description"
-          placeholder="Describe your item..."
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          required
-        />
-      </div>
+          <div className="space-y-2">
+            <Label htmlFor="listing-description">Description</Label>
+            <Textarea
+              id="listing-description"
+              placeholder="Describe your item or service"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={3}
+              disabled={isSubmitting}
+            />
+          </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label htmlFor="price">Price ($)</Label>
-          <Input
-            id="price"
-            type="number"
-            step="0.01"
-            min="0"
-            placeholder="0.00"
-            value={price}
-            onChange={(e) => setPrice(e.target.value)}
-            required
-          />
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="condition">Condition</Label>
-          <Select value={condition} onValueChange={(value: "new" | "used" | "refurbished") => setCondition(value)}>
-            <SelectTrigger id="condition">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="new">New</SelectItem>
-              <SelectItem value="used">Used</SelectItem>
-              <SelectItem value="refurbished">Refurbished</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="category">Category</Label>
-        <Select value={category} onValueChange={setCategory}>
-          <SelectTrigger id="category">
-            <SelectValue placeholder="Select category" />
-          </SelectTrigger>
-          <SelectContent>
-            {categories.map((cat) => (
-              <SelectItem key={cat} value={cat}>
-                {cat.charAt(0).toUpperCase() + cat.slice(1)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="space-y-2">
-        <Label>Images</Label>
-        <div className="space-y-2">
-          <Input
-            type="file"
-            accept="image/*"
-            multiple
-            onChange={handleImageUpload}
-            className="hidden"
-            id="image-upload"
-          />
-          <Label htmlFor="image-upload" className="cursor-pointer">
-            <Button type="button" variant="outline" asChild>
-              <span>
-                <Upload className="h-4 w-4 mr-2" />
-                Upload Images
-              </span>
-            </Button>
-          </Label>
-
-          {images.length > 0 && (
-            <div className="grid grid-cols-3 gap-2">
-              {images.map((image, index) => (
-                <div key={index} className="relative">
-                  <img
-                    src={image || "/placeholder.svg"}
-                    alt={`Upload ${index + 1}`}
-                    className="w-full h-20 object-cover rounded border"
-                  />
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    size="sm"
-                    className="absolute -top-2 -right-2 h-6 w-6 p-0"
-                    onClick={() => removeImage(index)}
-                  >
-                    <X className="h-3 w-3" />
-                  </Button>
-                </div>
-              ))}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="listing-price">Price ($)</Label>
+              <div className="relative">
+                <DollarSign className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="listing-price"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="0.00"
+                  value={price}
+                  onChange={(e) => setPrice(e.target.value)}
+                  disabled={isSubmitting}
+                  className="pl-8"
+                />
+              </div>
             </div>
-          )}
-        </div>
-      </div>
 
-      <div className="flex gap-2 pt-4">
-        <Button type="submit" disabled={isSubmitting} className="flex-1">
+            <div className="space-y-2">
+              <Label htmlFor="listing-category">Category</Label>
+              <Select value={category} onValueChange={setCategory} disabled={isSubmitting}>
+                <SelectTrigger id="listing-category">
+                  <SelectValue placeholder="Select category" />
+                </SelectTrigger>
+                <SelectContent>
+                  {CATEGORIES.map((cat) => (
+                    <SelectItem key={cat} value={cat}>
+                      {cat}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="listing-location">Location</Label>
+            <div className="relative">
+              <MapPin className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                id="listing-location"
+                placeholder="City, State"
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+                disabled={isSubmitting}
+                className="pl-8"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Contact Information (at least one required)</Label>
+            <div className="space-y-2">
+              <div className="relative">
+                <Phone className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Phone number"
+                  value={contactPhone}
+                  onChange={(e) => setContactPhone(e.target.value)}
+                  disabled={isSubmitting}
+                  className="pl-8"
+                />
+              </div>
+              <div className="relative">
+                <Mail className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Email address"
+                  type="email"
+                  value={contactEmail}
+                  onChange={(e) => setContactEmail(e.target.value)}
+                  disabled={isSubmitting}
+                  className="pl-8"
+                />
+              </div>
+              <div className="relative">
+                <Home className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Address (optional)"
+                  value={contactAddress}
+                  onChange={(e) => setContactAddress(e.target.value)}
+                  disabled={isSubmitting}
+                  className="pl-8"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Listing Image</Label>
+            <PhotoUploadField onPhotoUploaded={handlePhotoUploaded} />
+          </div>
+
+          {error && (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4 mr-2" />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+
+          {success && (
+            <Alert className="bg-green-50 border-green-200 text-green-800">
+              <AlertDescription>Listing created successfully!</AlertDescription>
+            </Alert>
+          )}
+        </form>
+      </CardContent>
+      <CardFooter>
+        <Button type="submit" disabled={isSubmitting || !username} className="w-full" onClick={handleSubmit}>
           {isSubmitting ? "Creating..." : "Create Listing"}
         </Button>
-      </div>
-    </form>
+      </CardFooter>
+    </Card>
   )
 }

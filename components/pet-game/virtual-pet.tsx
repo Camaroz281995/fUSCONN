@@ -14,57 +14,22 @@ import { persistentStorage } from "@/lib/persistent-storage"
 import type { VirtualPet } from "@/lib/types"
 
 const PET_TYPES = [
-  {
-    id: "cat",
-    name: "Cat",
-    emoji: "🐱",
-    breeds: ["Persian", "Siamese", "Maine Coon", "British Shorthair", "Ragdoll"],
-    traits: ["Independent", "Curious", "Playful", "Affectionate"],
-  },
-  {
-    id: "dog",
-    name: "Dog",
-    emoji: "🐕",
-    breeds: ["Golden Retriever", "German Shepherd", "Labrador", "Bulldog", "Poodle"],
-    traits: ["Loyal", "Energetic", "Friendly", "Protective"],
-  },
-  {
-    id: "rabbit",
-    name: "Rabbit",
-    emoji: "🐰",
-    breeds: ["Holland Lop", "Netherland Dwarf", "Flemish Giant", "Angora"],
-    traits: ["Gentle", "Quiet", "Social", "Active"],
-  },
-  {
-    id: "hamster",
-    name: "Hamster",
-    emoji: "🐹",
-    breeds: ["Syrian", "Dwarf Campbell", "Roborovski", "Chinese"],
-    traits: ["Small", "Active", "Nocturnal", "Cute"],
-  },
-  {
-    id: "bird",
-    name: "Bird",
-    emoji: "🐦",
-    breeds: ["Parakeet", "Canary", "Cockatiel", "Lovebird"],
-    traits: ["Musical", "Colorful", "Social", "Intelligent"],
-  },
-  {
-    id: "fish",
-    name: "Fish",
-    emoji: "🐠",
-    breeds: ["Goldfish", "Betta", "Guppy", "Angelfish"],
-    traits: ["Peaceful", "Colorful", "Graceful", "Calming"],
-  },
+  { id: "cat", name: "Cat", emoji: "🐱" },
+  { id: "dog", name: "Dog", emoji: "🐶" },
+  { id: "rabbit", name: "Rabbit", emoji: "🐰" },
+  { id: "hamster", name: "Hamster", emoji: "🐹" },
+  { id: "dragon", name: "Dragon", emoji: "🐉" },
+  { id: "fox", name: "Fox", emoji: "🦊" },
+  { id: "unicorn", name: "Unicorn", emoji: "🦄" },
+  { id: "penguin", name: "Penguin", emoji: "🐧" },
 ]
 
-export default function VirtualPetComponent() {
+export default function VirtualPet() {
   const { username } = useUser()
   const [pet, setPet] = useState<VirtualPet | null>(null)
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [petName, setPetName] = useState("")
   const [petType, setPetType] = useState("cat")
-  const [selectedBreed, setSelectedBreed] = useState("")
   const [lastInteraction, setLastInteraction] = useState<Record<string, number>>({})
   const [showLevelUpAnimation, setShowLevelUpAnimation] = useState(false)
 
@@ -103,13 +68,13 @@ export default function VirtualPetComponent() {
 
   // Create a new pet
   const handleCreatePet = () => {
-    if (!username || !petName.trim() || !petType || !selectedBreed) return
+    if (!username || !petName.trim() || !petType) return
 
     const selectedPetType = PET_TYPES.find((p) => p.id === petType) || PET_TYPES[0]
 
     const newPet: VirtualPet = {
       name: petName.trim(),
-      type: petType as VirtualPet["type"],
+      type: petType,
       emoji: selectedPetType.emoji,
       owner: username,
       hunger: 80,
@@ -120,14 +85,12 @@ export default function VirtualPetComponent() {
       experience: 0,
       createdAt: Date.now(),
       lastVisit: Date.now(),
-      items: [selectedBreed],
+      items: [],
     }
 
     setPet(newPet)
     persistentStorage.saveUserPet(newPet)
     setShowCreateDialog(false)
-    setPetName("")
-    setSelectedBreed("")
   }
 
   // Interaction cooldowns (in milliseconds)
@@ -212,19 +175,17 @@ export default function VirtualPetComponent() {
   // Get pet mood based on health
   const getPetMood = () => {
     const health = calculateHealth()
-    if (health >= 80) return "😊 Happy"
-    if (health >= 60) return "😌 Content"
-    if (health >= 40) return "😐 Okay"
-    if (health >= 20) return "😔 Sad"
-    return "😢 Miserable"
+    if (health >= 80) return "Happy"
+    if (health >= 60) return "Content"
+    if (health >= 40) return "Okay"
+    if (health >= 20) return "Sad"
+    return "Miserable"
   }
-
-  const selectedPetType = PET_TYPES.find((p) => p.id === petType)
 
   if (!username) {
     return (
       <div className="text-center py-8">
-        <p className="text-muted-foreground">Please sign in to adopt a virtual pet</p>
+        <p className="text-muted-foreground">Please set your username in the Profile tab to adopt a virtual pet</p>
       </div>
     )
   }
@@ -260,13 +221,7 @@ export default function VirtualPetComponent() {
 
                 <div className="space-y-2">
                   <Label htmlFor="pet-type">Pet Type</Label>
-                  <Select
-                    value={petType}
-                    onValueChange={(value) => {
-                      setPetType(value)
-                      setSelectedBreed("")
-                    }}
-                  >
+                  <Select value={petType} onValueChange={setPetType}>
                     <SelectTrigger id="pet-type">
                       <SelectValue placeholder="Select pet type" />
                     </SelectTrigger>
@@ -274,7 +229,7 @@ export default function VirtualPetComponent() {
                       {PET_TYPES.map((type) => (
                         <SelectItem key={type.id} value={type.id}>
                           <span className="flex items-center">
-                            <span className="text-lg mr-2">{type.emoji}</span>
+                            <span className="mr-2">{type.emoji}</span>
                             {type.name}
                           </span>
                         </SelectItem>
@@ -282,44 +237,13 @@ export default function VirtualPetComponent() {
                     </SelectContent>
                   </Select>
                 </div>
-
-                {selectedPetType && (
-                  <>
-                    <div className="flex justify-center">
-                      <div className="w-32 h-32 bg-muted rounded-lg flex items-center justify-center">
-                        <span className="text-8xl">{selectedPetType.emoji}</span>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="pet-breed">Breed</Label>
-                      <Select value={selectedBreed} onValueChange={setSelectedBreed}>
-                        <SelectTrigger id="pet-breed">
-                          <SelectValue placeholder="Select breed" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {selectedPetType.breeds.map((breed) => (
-                            <SelectItem key={breed} value={breed}>
-                              {breed}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="p-3 bg-muted rounded-lg">
-                      <h4 className="font-medium mb-2">Pet Traits</h4>
-                      <p className="text-sm text-muted-foreground">{selectedPetType.traits.join(", ")}</p>
-                    </div>
-                  </>
-                )}
               </div>
 
               <DialogFooter>
                 <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
                   Cancel
                 </Button>
-                <Button onClick={handleCreatePet} disabled={!petName.trim() || !petType || !selectedBreed}>
+                <Button onClick={handleCreatePet} disabled={!petName.trim() || !petType}>
                   Adopt
                 </Button>
               </DialogFooter>
@@ -329,9 +253,6 @@ export default function VirtualPetComponent() {
       </Card>
     )
   }
-
-  const petTypeInfo = PET_TYPES.find((p) => p.id === pet.type)
-  const breed = pet.items[0] || "Mixed"
 
   return (
     <Card className="relative overflow-hidden">
@@ -349,14 +270,7 @@ export default function VirtualPetComponent() {
 
       <CardHeader>
         <CardTitle className="flex justify-between items-center">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-2xl">{pet.emoji}</span>
-              <span>{pet.name}</span>
-              <span className="text-sm text-muted-foreground">({breed})</span>
-            </div>
-            <p className="text-sm text-muted-foreground font-normal">{petTypeInfo?.traits.slice(0, 2).join(", ")}</p>
-          </div>
+          <span>{pet.name}</span>
           <div className="flex items-center">
             <Award className="h-5 w-5 mr-1 text-yellow-500" />
             <span>Level {pet.level}</span>
@@ -366,107 +280,79 @@ export default function VirtualPetComponent() {
 
       <CardContent className="space-y-6">
         <div className="flex flex-col items-center">
-          <div className="w-48 h-48 mb-4 rounded-lg bg-gradient-to-br from-blue-50 to-purple-50 dark:from-blue-950 dark:to-purple-950 flex items-center justify-center border-2 border-dashed border-muted-foreground/20">
-            <span className="text-9xl animate-bounce" style={{ animationDuration: "2s" }}>
-              {pet.emoji}
-            </span>
-          </div>
-          <div className="text-lg font-medium mb-2">{getPetMood()}</div>
+          <div className="text-8xl mb-2">{pet.emoji}</div>
+          <div className="text-sm text-muted-foreground">Mood: {getPetMood()}</div>
 
-          <div className="w-full mt-4 bg-muted rounded-full h-3">
+          <div className="w-full mt-4 bg-muted rounded-full h-2.5">
             <div
-              className="bg-gradient-to-r from-blue-500 to-purple-500 h-3 rounded-full transition-all duration-500"
+              className="bg-primary h-2.5 rounded-full"
               style={{ width: `${(pet.experience / (pet.level * 100)) * 100}%` }}
             ></div>
           </div>
-          <div className="text-sm text-muted-foreground mt-2">
+          <div className="text-xs text-muted-foreground mt-1">
             XP: {pet.experience} / {pet.level * 100}
           </div>
         </div>
 
         <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-2">
+          <div className="space-y-1">
             <div className="flex justify-between items-center">
               <div className="flex items-center">
-                <Utensils className="h-4 w-4 mr-2 text-orange-500" />
-                <span className="text-sm font-medium">Hunger</span>
+                <Utensils className="h-4 w-4 mr-1 text-orange-500" />
+                <span className="text-sm">Hunger</span>
               </div>
-              <span className="text-sm font-bold">{pet.hunger}%</span>
+              <span className="text-sm">{pet.hunger}%</span>
             </div>
-            <Progress value={pet.hunger} className="h-3" />
+            <Progress value={pet.hunger} className="h-2" />
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-1">
             <div className="flex justify-between items-center">
               <div className="flex items-center">
-                <Heart className="h-4 w-4 mr-2 text-red-500" />
-                <span className="text-sm font-medium">Happiness</span>
+                <Heart className="h-4 w-4 mr-1 text-red-500" />
+                <span className="text-sm">Happiness</span>
               </div>
-              <span className="text-sm font-bold">{pet.happiness}%</span>
+              <span className="text-sm">{pet.happiness}%</span>
             </div>
-            <Progress value={pet.happiness} className="h-3" />
+            <Progress value={pet.happiness} className="h-2" />
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-1">
             <div className="flex justify-between items-center">
               <div className="flex items-center">
-                <Gamepad2 className="h-4 w-4 mr-2 text-green-500" />
-                <span className="text-sm font-medium">Energy</span>
+                <Gamepad2 className="h-4 w-4 mr-1 text-green-500" />
+                <span className="text-sm">Energy</span>
               </div>
-              <span className="text-sm font-bold">{pet.energy}%</span>
+              <span className="text-sm">{pet.energy}%</span>
             </div>
-            <Progress value={pet.energy} className="h-3" />
+            <Progress value={pet.energy} className="h-2" />
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-1">
             <div className="flex justify-between items-center">
               <div className="flex items-center">
-                <Droplets className="h-4 w-4 mr-2 text-blue-500" />
-                <span className="text-sm font-medium">Hydration</span>
+                <Droplets className="h-4 w-4 mr-1 text-blue-500" />
+                <span className="text-sm">Hydration</span>
               </div>
-              <span className="text-sm font-bold">{pet.hydration}%</span>
+              <span className="text-sm">{pet.hydration}%</span>
             </div>
-            <Progress value={pet.hydration} className="h-3" />
+            <Progress value={pet.hydration} className="h-2" />
           </div>
         </div>
       </CardContent>
 
-      <CardFooter className="flex justify-between gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => handleInteraction("feed")}
-          disabled={isOnCooldown("feed")}
-          className="flex-1"
-        >
-          🍎 {isOnCooldown("feed") ? `${getCooldownRemaining("feed")}s` : "Feed"}
+      <CardFooter className="flex justify-between">
+        <Button variant="outline" size="sm" onClick={() => handleInteraction("feed")} disabled={isOnCooldown("feed")}>
+          {isOnCooldown("feed") ? `${getCooldownRemaining("feed")}s` : "Feed"}
         </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => handleInteraction("play")}
-          disabled={isOnCooldown("play")}
-          className="flex-1"
-        >
-          🎾 {isOnCooldown("play") ? `${getCooldownRemaining("play")}s` : "Play"}
+        <Button variant="outline" size="sm" onClick={() => handleInteraction("play")} disabled={isOnCooldown("play")}>
+          {isOnCooldown("play") ? `${getCooldownRemaining("play")}s` : "Play"}
         </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => handleInteraction("rest")}
-          disabled={isOnCooldown("rest")}
-          className="flex-1"
-        >
-          😴 {isOnCooldown("rest") ? `${getCooldownRemaining("rest")}s` : "Rest"}
+        <Button variant="outline" size="sm" onClick={() => handleInteraction("rest")} disabled={isOnCooldown("rest")}>
+          {isOnCooldown("rest") ? `${getCooldownRemaining("rest")}s` : "Rest"}
         </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => handleInteraction("water")}
-          disabled={isOnCooldown("water")}
-          className="flex-1"
-        >
-          💧 {isOnCooldown("water") ? `${getCooldownRemaining("water")}s` : "Water"}
+        <Button variant="outline" size="sm" onClick={() => handleInteraction("water")} disabled={isOnCooldown("water")}>
+          {isOnCooldown("water") ? `${getCooldownRemaining("water")}s` : "Water"}
         </Button>
       </CardFooter>
     </Card>

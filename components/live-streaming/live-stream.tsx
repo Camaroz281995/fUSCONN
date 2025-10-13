@@ -1,279 +1,450 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef, useEffect } from "react"
 import { useUser } from "@/context/user-context"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
-import { Separator } from "@/components/ui/separator"
-import { formatNumber, formatDate } from "@/lib/utils"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
-  ArrowLeft,
-  Heart,
-  MessageCircle,
-  Share,
   Users,
-  Eye,
-  Send,
-  Volume2,
-  VolumeX,
-  Maximize,
+  MessageSquare,
+  Heart,
+  Share2,
+  Gift,
+  Mic,
+  MicOff,
+  Camera,
+  CameraOff,
+  ScreenShare,
+  PhoneOff,
   Settings,
+  Maximize,
+  Minimize,
+  Send,
 } from "lucide-react"
-import type { LiveStream as LiveStreamType } from "@/lib/types"
+import type { LiveStream, LiveStreamComment } from "@/lib/types"
 
 interface LiveStreamProps {
-  stream: LiveStreamType
-  onBack: () => void
+  stream?: LiveStream
+  isHost?: boolean
+  onClose: () => void
 }
 
-interface ChatMessage {
-  id: string
-  username: string
-  message: string
-  timestamp: number
-  isHighlighted?: boolean
-}
+export default function LiveStream({ stream, isHost = false, onClose }: LiveStreamProps) {
+  const { username, profilePhoto } = useUser()
+  const [isLive, setIsLive] = useState(false)
+  const [viewerCount, setViewerCount] = useState(0)
+  const [likeCount, setLikeCount] = useState(0)
+  const [comments, setComments] = useState<LiveStreamComment[]>([])
+  const [commentInput, setCommentInput] = useState("")
+  const [isMicOn, setIsMicOn] = useState(true)
+  const [isCameraOn, setIsCameraOn] = useState(true)
+  const [isScreenSharing, setIsScreenSharing] = useState(false)
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  const [activeTab, setActiveTab] = useState("chat")
 
-export default function LiveStream({ stream, onBack }: LiveStreamProps) {
-  const { username } = useUser()
-  const [isFollowing, setIsFollowing] = useState(false)
-  const [isLiked, setIsLiked] = useState(false)
-  const [isMuted, setIsMuted] = useState(false)
-  const [chatMessage, setChatMessage] = useState("")
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
-    {
-      id: "1",
-      username: "viewer123",
-      message: "Great stream! Love the content",
-      timestamp: Date.now() - 300000,
-    },
-    {
-      id: "2",
-      username: "fan_user",
-      message: "How long have you been doing this?",
-      timestamp: Date.now() - 240000,
-    },
-    {
-      id: "3",
-      username: "stream_lover",
-      message: "This is amazing! Keep it up!",
-      timestamp: Date.now() - 180000,
-      isHighlighted: true,
-    },
-    {
-      id: "4",
-      username: "curious_viewer",
-      message: "What's your setup like?",
-      timestamp: Date.now() - 120000,
-    },
-    {
-      id: "5",
-      username: "regular_watcher",
-      message: "Been watching for 30 minutes, love it!",
-      timestamp: Date.now() - 60000,
-    },
-  ])
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const streamContainerRef = useRef<HTMLDivElement>(null)
+  const localStreamRef = useRef<MediaStream | null>(null)
 
-  const [currentViewers] = useState(stream.viewers + Math.floor(Math.random() * 50))
+  // Initialize stream
+  useEffect(() => {
+    if (isHost) {
+      startCamera()
+    } else if (stream) {
+      // In a real app, we would connect to the stream
+      // For this demo, we'll simulate a stream with a timer
 
-  const handleSendMessage = () => {
-    if (!username || !chatMessage.trim()) return
+      // Simulate viewers joining
+      const viewerInterval = setInterval(() => {
+        setViewerCount((prev) => Math.min(prev + Math.floor(Math.random() * 3), 100))
+      }, 5000)
 
-    const newMessage: ChatMessage = {
+      // Simulate likes
+      const likeInterval = setInterval(() => {
+        if (Math.random() > 0.7) {
+          setLikeCount((prev) => prev + 1)
+        }
+      }, 3000)
+
+      // Simulate comments
+      const commentInterval = setInterval(() => {
+        if (Math.random() > 0.6) {
+          const randomComment = generateRandomComment()
+          setComments((prev) => [...prev, randomComment])
+        }
+      }, 4000)
+
+      return () => {
+        clearInterval(viewerInterval)
+        clearInterval(likeInterval)
+        clearInterval(commentInterval)
+      }
+    }
+
+    return () => {
+      stopStream()
+    }
+  }, [isHost, stream])
+
+  // Scroll to bottom of comments
+  useEffect(() => {
+    const chatContainer = document.getElementById("live-chat-container")
+    if (chatContainer) {
+      chatContainer.scrollTop = chatContainer.scrollHeight
+    }
+  }, [comments])
+
+  const startCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: true,
+      })
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream
+      }
+
+      localStreamRef.current = stream
+      setIsLive(true)
+
+      // Simulate viewers joining
+      const viewerInterval = setInterval(() => {
+        setViewerCount((prev) => Math.min(prev + Math.floor(Math.random() * 3), 100))
+      }, 5000)
+
+      return () => clearInterval(viewerInterval)
+    } catch (error) {
+      console.error("Error accessing camera:", error)
+    }
+  }
+
+  const stopStream = () => {
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach((track) => track.stop())
+      localStreamRef.current = null
+    }
+
+    setIsLive(false)
+  }
+
+  const toggleMic = () => {
+    if (localStreamRef.current) {
+      const audioTracks = localStreamRef.current.getAudioTracks()
+      audioTracks.forEach((track) => {
+        track.enabled = !track.enabled
+      })
+      setIsMicOn(!isMicOn)
+    }
+  }
+
+  const toggleCamera = () => {
+    if (localStreamRef.current) {
+      const videoTracks = localStreamRef.current.getVideoTracks()
+      videoTracks.forEach((track) => {
+        track.enabled = !track.enabled
+      })
+      setIsCameraOn(!isCameraOn)
+    }
+  }
+
+  const toggleScreenShare = async () => {
+    if (isScreenSharing) {
+      // Stop screen sharing and go back to camera
+      await startCamera()
+      setIsScreenSharing(false)
+    } else {
+      try {
+        // Stop current stream
+        stopStream()
+
+        // Start screen sharing
+        const stream = await navigator.mediaDevices.getDisplayMedia({
+          video: true,
+          audio: true,
+        })
+
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream
+        }
+
+        localStreamRef.current = stream
+        setIsLive(true)
+        setIsScreenSharing(true)
+      } catch (error) {
+        console.error("Error sharing screen:", error)
+        // Fallback to camera
+        await startCamera()
+      }
+    }
+  }
+
+  const toggleFullscreen = () => {
+    if (!streamContainerRef.current) return
+
+    if (!document.fullscreenElement) {
+      streamContainerRef.current.requestFullscreen().catch((err) => {
+        console.error(`Error attempting to enable full-screen mode: ${err.message}`)
+      })
+      setIsFullscreen(true)
+    } else {
+      document.exitFullscreen()
+      setIsFullscreen(false)
+    }
+  }
+
+  const handleEndStream = () => {
+    stopStream()
+    onClose()
+  }
+
+  const handleSendComment = () => {
+    if (!commentInput.trim() || !username) return
+
+    const newComment: LiveStreamComment = {
       id: Date.now().toString(),
       username,
-      message: chatMessage.trim(),
+      content: commentInput,
       timestamp: Date.now(),
     }
 
-    setChatMessages((prev) => [...prev, newMessage])
-    setChatMessage("")
-  }
-
-  const handleFollow = () => {
-    setIsFollowing(!isFollowing)
+    setComments((prev) => [...prev, newComment])
+    setCommentInput("")
   }
 
   const handleLike = () => {
-    setIsLiked(!isLiked)
+    setLikeCount((prev) => prev + 1)
   }
 
-  const handleShare = () => {
-    if (navigator.share) {
-      navigator.share({
-        title: stream.title,
-        text: `Check out this live stream by ${stream.streamer}`,
-        url: window.location.href,
-      })
-    } else {
-      // Fallback: copy to clipboard
-      navigator.clipboard.writeText(window.location.href)
-      alert("Stream link copied to clipboard!")
+  // Generate random comments for demo
+  const generateRandomComment = (): LiveStreamComment => {
+    const randomUsernames = ["viewer123", "fan_account", "music_lover", "tech_geek", "travel_addict"]
+    const randomComments = [
+      "Great stream!",
+      "Hello from California!",
+      "Can you play some music?",
+      "What's your favorite song?",
+      "How often do you stream?",
+      "Love the content!",
+      "First time here, this is awesome!",
+      "Greetings from Germany!",
+      "What camera are you using?",
+      "Do you have any pets?",
+    ]
+
+    return {
+      id: Date.now().toString(),
+      username: randomUsernames[Math.floor(Math.random() * randomUsernames.length)],
+      content: randomComments[Math.floor(Math.random() * randomComments.length)],
+      timestamp: Date.now(),
     }
   }
 
-  const streamDuration = Math.floor((Date.now() - stream.startTime) / 60000)
-
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 h-[600px]">
-      {/* Video Player */}
-      <div className="lg:col-span-3">
-        <Card className="h-full">
-          <CardContent className="p-0 h-full">
-            {/* Video Container */}
-            <div className="relative aspect-video bg-black rounded-t-lg overflow-hidden">
-              {/* Placeholder for video stream */}
-              <div className="absolute inset-0 bg-gradient-to-br from-purple-600 via-pink-600 to-red-600 flex items-center justify-center">
-                <div className="text-center text-white">
-                  <div className="text-6xl mb-4">📹</div>
-                  <h3 className="text-2xl font-bold mb-2">Live Stream</h3>
-                  <p className="text-lg opacity-90">{stream.title}</p>
-                </div>
-              </div>
+    <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
+      <div
+        ref={streamContainerRef}
+        className="w-full max-w-4xl bg-background rounded-lg shadow-lg overflow-hidden flex flex-col"
+      >
+        <div className="relative">
+          <div className="aspect-video bg-black">
+            <video ref={videoRef} autoPlay playsInline muted={isHost} className="w-full h-full object-cover" />
 
-              {/* Live Badge */}
-              <Badge className="absolute top-4 left-4 bg-red-500">
-                <div className="w-2 h-2 bg-white rounded-full mr-1 animate-pulse"></div>
-                LIVE
-              </Badge>
-
-              {/* Viewer Count */}
-              <div className="absolute top-4 right-4 bg-black/70 text-white px-3 py-1 rounded-full flex items-center">
-                <Eye className="h-4 w-4 mr-1" />
-                {formatNumber(currentViewers)}
-              </div>
-
-              {/* Video Controls */}
-              <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <Button variant="ghost" size="icon" onClick={() => setIsMuted(!isMuted)}>
-                    {isMuted ? <VolumeX className="h-4 w-4 text-white" /> : <Volume2 className="h-4 w-4 text-white" />}
-                  </Button>
-                  <span className="text-white text-sm">{streamDuration}m</span>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Button variant="ghost" size="icon">
-                    <Settings className="h-4 w-4 text-white" />
-                  </Button>
-                  <Button variant="ghost" size="icon">
-                    <Maximize className="h-4 w-4 text-white" />
-                  </Button>
-                </div>
-              </div>
-            </div>
-
-            {/* Stream Info */}
-            <div className="p-4 space-y-4">
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <h2 className="text-xl font-bold mb-2">{stream.title}</h2>
-                  <div className="flex items-center space-x-4 mb-2">
-                    <div className="flex items-center space-x-2">
-                      <Avatar className="h-8 w-8">
-                        <AvatarFallback>{stream.streamer.substring(0, 2).toUpperCase()}</AvatarFallback>
-                      </Avatar>
-                      <span className="font-medium">{stream.streamer}</span>
-                    </div>
-                    <Badge variant="secondary">{stream.category}</Badge>
-                  </div>
-                  <p className="text-muted-foreground">{stream.description}</p>
-                </div>
-                <Button variant="outline" onClick={onBack}>
-                  <ArrowLeft className="h-4 w-4 mr-1" />
-                  Back
-                </Button>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex items-center space-x-2">
-                <Button onClick={handleFollow} variant={isFollowing ? "default" : "outline"}>
-                  <Users className="h-4 w-4 mr-1" />
-                  {isFollowing ? "Following" : "Follow"}
-                </Button>
-                <Button onClick={handleLike} variant="ghost" className={isLiked ? "text-red-500" : ""}>
-                  <Heart className={`h-4 w-4 mr-1 ${isLiked ? "fill-current" : ""}`} />
-                  Like
-                </Button>
-                <Button onClick={handleShare} variant="ghost">
-                  <Share className="h-4 w-4 mr-1" />
-                  Share
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Chat */}
-      <div className="lg:col-span-1">
-        <Card className="h-full flex flex-col">
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center justify-between">
+            {/* Stream info overlay */}
+            <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-start bg-gradient-to-b from-black/70 to-transparent">
               <div className="flex items-center">
-                <MessageCircle className="h-4 w-4 mr-2" />
-                Live Chat
-              </div>
-              <Badge variant="secondary" className="text-xs">
-                {formatNumber(currentViewers)} viewers
-              </Badge>
-            </CardTitle>
-          </CardHeader>
-
-          <CardContent className="flex-1 flex flex-col p-0">
-            {/* Chat Messages */}
-            <ScrollArea className="flex-1 p-4">
-              <div className="space-y-3">
-                {chatMessages.map((msg) => (
-                  <div
-                    key={msg.id}
-                    className={`p-2 rounded ${msg.isHighlighted ? "bg-yellow-100 border border-yellow-300" : ""}`}
-                  >
-                    <div className="flex items-start space-x-2">
-                      <Avatar className="h-6 w-6">
-                        <AvatarFallback className="text-xs">
-                          {msg.username.substring(0, 2).toUpperCase()}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center space-x-1">
-                          <span className="font-medium text-sm">{msg.username}</span>
-                          <span className="text-xs text-muted-foreground">{formatDate(msg.timestamp)}</span>
-                        </div>
-                        <p className="text-sm break-words">{msg.message}</p>
-                      </div>
-                    </div>
+                <Avatar className="h-10 w-10 border-2 border-primary">
+                  <AvatarImage src={stream?.hostAvatar || profilePhoto || undefined} />
+                  <AvatarFallback>
+                    {(stream?.hostUsername || username || "").substring(0, 2).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="ml-2">
+                  <h3 className="text-white font-medium">{stream?.hostUsername || username || "Anonymous"}</h3>
+                  <div className="flex items-center">
+                    <Badge variant="destructive" className="mr-2">
+                      LIVE
+                    </Badge>
+                    <span className="text-white/80 text-xs flex items-center">
+                      <Users className="h-3 w-3 mr-1" />
+                      {viewerCount}
+                    </span>
                   </div>
-                ))}
+                </div>
               </div>
-            </ScrollArea>
 
-            <Separator />
+              <div className="flex items-center gap-2">
+                <Button variant="ghost" size="icon" className="text-white" onClick={handleLike}>
+                  <Heart className="h-5 w-5" />
+                </Button>
+                <Button variant="ghost" size="icon" className="text-white">
+                  <Share2 className="h-5 w-5" />
+                </Button>
+                <Button variant="ghost" size="icon" className="text-white" onClick={toggleFullscreen}>
+                  {isFullscreen ? <Minimize className="h-5 w-5" /> : <Maximize className="h-5 w-5" />}
+                </Button>
+              </div>
+            </div>
 
-            {/* Chat Input */}
-            <div className="p-4">
-              {username ? (
-                <div className="flex space-x-2">
+            {/* Stream title and description */}
+            <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/70 to-transparent">
+              <h2 className="text-white font-medium text-lg">{stream?.title || "Live Stream"}</h2>
+              <p className="text-white/80 text-sm">{stream?.description || "Welcome to my live stream!"}</p>
+            </div>
+
+            {/* Like animation */}
+            <div className="absolute bottom-16 right-8 flex flex-col-reverse items-center">
+              {Array.from({ length: Math.min(3, likeCount % 10) }).map((_, i) => (
+                <Heart
+                  key={i}
+                  className="text-red-500 absolute animate-float"
+                  style={{
+                    animationDelay: `${i * 0.2}s`,
+                    opacity: 1 - i * 0.2,
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* Stream controls */}
+          {isHost && (
+            <div className="bg-muted p-2 flex justify-center gap-2">
+              <Button variant={isMicOn ? "outline" : "destructive"} size="icon" onClick={toggleMic}>
+                {isMicOn ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
+              </Button>
+              <Button variant={isCameraOn ? "outline" : "destructive"} size="icon" onClick={toggleCamera}>
+                {isCameraOn ? <Camera className="h-4 w-4" /> : <CameraOff className="h-4 w-4" />}
+              </Button>
+              <Button variant={isScreenSharing ? "default" : "outline"} size="icon" onClick={toggleScreenShare}>
+                <ScreenShare className="h-4 w-4" />
+              </Button>
+              <Button variant="outline" size="icon">
+                <Settings className="h-4 w-4" />
+              </Button>
+              <Button variant="destructive" size="icon" onClick={handleEndStream}>
+                <PhoneOff className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
+        </div>
+
+        {/* Chat and viewers */}
+        <div className="flex-1 min-h-0">
+          <Tabs defaultValue="chat" value={activeTab} onValueChange={setActiveTab}>
+            <TabsList className="w-full grid grid-cols-2">
+              <TabsTrigger value="chat" className="flex items-center">
+                <MessageSquare className="h-4 w-4 mr-2" />
+                Chat
+              </TabsTrigger>
+              <TabsTrigger value="viewers" className="flex items-center">
+                <Users className="h-4 w-4 mr-2" />
+                Viewers ({viewerCount})
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="chat" className="m-0 h-[200px] flex flex-col">
+              <ScrollArea className="flex-1" id="live-chat-container">
+                <div className="p-4 space-y-2">
+                  {comments.length === 0 ? (
+                    <div className="text-center py-4 text-muted-foreground">
+                      No comments yet. Be the first to say hello!
+                    </div>
+                  ) : (
+                    comments.map((comment) => (
+                      <div key={comment.id} className="flex items-start gap-2">
+                        <Avatar className="h-6 w-6">
+                          <AvatarFallback>{comment.username.substring(0, 2).toUpperCase()}</AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <div className="flex items-baseline gap-2">
+                            <span className="font-medium text-sm">{comment.username}</span>
+                            <span className="text-xs text-muted-foreground">
+                              {new Date(comment.timestamp).toLocaleTimeString([], {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </span>
+                          </div>
+                          <p className="text-sm">{comment.content}</p>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </ScrollArea>
+
+              <div className="p-2 border-t">
+                <div className="flex gap-2">
                   <Input
-                    placeholder="Say something..."
-                    value={chatMessage}
-                    onChange={(e) => setChatMessage(e.target.value)}
-                    onKeyPress={(e) => e.key === "Enter" && handleSendMessage()}
-                    className="flex-1"
+                    placeholder="Type a message..."
+                    value={commentInput}
+                    onChange={(e) => setCommentInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        handleSendComment()
+                      }
+                    }}
                   />
-                  <Button onClick={handleSendMessage} disabled={!chatMessage.trim()}>
+                  <Button size="icon" onClick={handleSendComment}>
                     <Send className="h-4 w-4" />
                   </Button>
                 </div>
-              ) : (
-                <div className="text-center text-sm text-muted-foreground">Sign in to chat</div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="viewers" className="m-0 h-[200px]">
+              <ScrollArea className="h-full">
+                <div className="p-4">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="font-medium">Top Viewers</h3>
+                    <Button variant="ghost" size="sm">
+                      See All
+                    </Button>
+                  </div>
+
+                  <div className="space-y-2">
+                    {Array.from({ length: Math.min(10, viewerCount) }).map((_, i) => (
+                      <div key={i} className="flex items-center justify-between p-2 hover:bg-muted/50 rounded-md">
+                        <div className="flex items-center gap-2">
+                          <Avatar className="h-8 w-8">
+                            <AvatarFallback>
+                              {String.fromCharCode(65 + (i % 26))}
+                              {String.fromCharCode(65 + ((i + 1) % 26))}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <p className="font-medium text-sm">Viewer{i + 1}</p>
+                            <p className="text-xs text-muted-foreground">
+                              Watching for {Math.floor(Math.random() * 60)} min
+                            </p>
+                          </div>
+                        </div>
+                        <Button variant="ghost" size="sm">
+                          <Gift className="h-4 w-4 mr-1" />
+                          Gift
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </ScrollArea>
+            </TabsContent>
+          </Tabs>
+        </div>
+
+        {/* Close button for viewers */}
+        {!isHost && (
+          <div className="p-4 border-t">
+            <Button variant="outline" className="w-full" onClick={onClose}>
+              Close Stream
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   )

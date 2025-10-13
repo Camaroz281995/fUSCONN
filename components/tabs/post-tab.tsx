@@ -1,208 +1,301 @@
 "use client"
 
-import type React from "react"
-
-import { useState } from "react"
+import { useState, useRef, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Badge } from "@/components/ui/badge"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useUser } from "@/context/user-context"
 import { persistentStorage } from "@/lib/persistent-storage"
-import { generateId } from "@/lib/utils"
+import DevicePhotoUpload from "@/components/photo/device-photo-upload"
+import DeviceVideoUpload from "@/components/video/device-video-upload"
+import FusionaryMailbox from "@/components/mailbox/fusionary-mailbox"
+import { PenTool, Image, Video, Mail } from 'lucide-react'
 import type { Post } from "@/lib/types"
-import { PlusCircle, ImageIcon, Video, Users } from "lucide-react"
 
 export default function PostTab() {
-  const { username, profilePhoto } = useUser()
+  const { username } = useUser()
   const [content, setContent] = useState("")
-  const [selectedImage, setSelectedImage] = useState<string | null>(null)
-  const [selectedVideo, setSelectedVideo] = useState<string | null>(null)
-  const [isPosting, setIsPosting] = useState(false)
+  const [imageUrl, setImageUrl] = useState("")
+  const [videoUrl, setVideoUrl] = useState("")
+  const [gifUrl, setGifUrl] = useState("")
+  const [devicePhoto, setDevicePhoto] = useState<string | null>(null)
+  const [deviceVideo, setDeviceVideo] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState("text")
+  const [isMailboxOpen, setIsMailboxOpen] = useState(false)
+  const [mailboxUnreadCount, setMailboxUnreadCount] = useState(0)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (file) {
-      const reader = new FileReader()
-      reader.onload = (e) => {
-        setSelectedImage(e.target?.result as string)
-        setSelectedVideo(null)
+  // Update mailbox unread count
+  useEffect(() => {
+    if (username) {
+      const updateUnreadCount = () => {
+        const notifications = persistentStorage.getUserNotifications(username)
+        const friendRequests = persistentStorage.getFriendRequests()
+          .filter(req => req.toUsername === username && req.status === "pending")
+        
+        const unread = notifications.filter(n => !n.isRead).length + friendRequests.length
+        setMailboxUnreadCount(unread)
       }
-      reader.readAsDataURL(file)
+
+      updateUnreadCount()
+      
+      // Update count periodically
+      const interval = setInterval(updateUnreadCount, 5000)
+      return () => clearInterval(interval)
     }
+  }, [username])
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    
+    if (!username) {
+      alert("Please set your username first!")
+      return
+    }
+
+    if (!content.trim() && !imageUrl && !videoUrl && !gifUrl && !devicePhoto && !deviceVideo) {
+      alert("Please add some content to your post!")
+      return
+    }
+
+    // Extract mentions from content
+    const mentionRegex = /@(\w+)/g
+    const mentions = content.match(mentionRegex)?.map((m) => m.substring(1)) || []
+
+    const post: Post = {
+      id: Date.now().toString(),
+      username,
+      content: content.trim(),
+      timestamp: Date.now(),
+      likes: [],
+      comments: [],
+      mentions: mentions.length > 0 ? mentions : undefined,
+    }
+
+    // Add media based on what's available
+    if (imageUrl || devicePhoto) {
+      post.imageUrl = imageUrl || devicePhoto || undefined
+    }
+    if (videoUrl || deviceVideo) {
+      post.videoUrl = videoUrl || deviceVideo || undefined
+    }
+    if (gifUrl) {
+      post.gifUrl = gifUrl
+    }
+
+    // Save post using the correct method
+    persistentStorage.addPost(post)
+
+    // Reset form
+    setContent("")
+    setImageUrl("")
+    setVideoUrl("")
+    setGifUrl("")
+    setDevicePhoto(null)
+    setDeviceVideo(null)
+    setActiveTab("text")
   }
 
-  const handleVideoUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (file) {
+  const handleGifUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file && file.type === 'image/gif') {
       const reader = new FileReader()
       reader.onload = (e) => {
-        setSelectedVideo(e.target?.result as string)
-        setSelectedImage(null)
+        setGifUrl(e.target?.result as string)
       }
       reader.readAsDataURL(file)
-    }
-  }
-
-  const handlePost = async () => {
-    if (!username || (!content.trim() && !selectedImage && !selectedVideo)) return
-
-    setIsPosting(true)
-
-    try {
-      const newPost: Post = {
-        id: generateId(),
-        username,
-        content: content.trim(),
-        timestamp: Date.now(),
-        likes: [],
-        dislikes: [],
-        comments: [],
-        image: selectedImage || undefined,
-        video: selectedVideo || undefined,
-      }
-
-      const existingPosts = persistentStorage.getPosts()
-      const updatedPosts = [newPost, ...existingPosts]
-      persistentStorage.savePosts(updatedPosts)
-
-      setContent("")
-      setSelectedImage(null)
-      setSelectedVideo(null)
-    } catch (error) {
-      console.error("Error posting:", error)
-    } finally {
-      setIsPosting(false)
     }
   }
 
   if (!username) {
     return (
       <Card>
-        <CardContent className="py-12 text-center">
-          <PlusCircle className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-          <h3 className="text-lg font-medium mb-2">Sign in to create posts</h3>
-          <p className="text-muted-foreground">Share your thoughts with the community</p>
+        <CardContent className="p-6 text-center">
+          <PenTool className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+          <p className="text-muted-foreground">Please set your username to create posts</p>
         </CardContent>
       </Card>
     )
   }
 
   return (
-    <div className="space-y-4">
+    <>
       <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <PlusCircle className="h-5 w-5" />
-            Create Post
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex gap-3">
-            <Avatar className="h-10 w-10">
-              <AvatarImage src={profilePhoto || undefined} />
-              <AvatarFallback>{username.charAt(0).toUpperCase()}</AvatarFallback>
-            </Avatar>
-            <div className="flex-1">
-              <Textarea
-                placeholder="What's on your mind?"
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-                className="min-h-[100px] resize-none border-0 p-0 text-base placeholder:text-muted-foreground focus-visible:ring-0"
-              />
-            </div>
-          </div>
-
-          {selectedImage && (
-            <div className="relative">
-              <img
-                src={selectedImage || "/placeholder.svg"}
-                alt="Selected"
-                className="w-full max-h-64 object-cover rounded-lg"
-              />
-              <Button
-                variant="secondary"
-                size="sm"
-                className="absolute top-2 right-2"
-                onClick={() => setSelectedImage(null)}
-              >
-                ✕
-              </Button>
-            </div>
-          )}
-
-          {selectedVideo && (
-            <div className="relative">
-              <video src={selectedVideo} controls className="w-full max-h-64 rounded-lg" />
-              <Button
-                variant="secondary"
-                size="sm"
-                className="absolute top-2 right-2"
-                onClick={() => setSelectedVideo(null)}
-              >
-                ✕
-              </Button>
-            </div>
-          )}
-
-          <div className="flex items-center justify-between pt-3 border-t">
-            <div className="flex gap-2">
-              <div>
-                <Input id="image-upload" type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
-                <Label htmlFor="image-upload">
-                  <Button variant="ghost" size="sm" className="gap-2" asChild>
-                    <span>
-                      <ImageIcon className="h-4 w-4" />
-                      Photo
-                    </span>
-                  </Button>
-                </Label>
-              </div>
-
-              <div>
-                <Input id="video-upload" type="file" accept="video/*" onChange={handleVideoUpload} className="hidden" />
-                <Label htmlFor="video-upload">
-                  <Button variant="ghost" size="sm" className="gap-2" asChild>
-                    <span>
-                      <Video className="h-4 w-4" />
-                      Video
-                    </span>
-                  </Button>
-                </Label>
-              </div>
-
-              <Button variant="ghost" size="sm" className="gap-2">
-                <Users className="h-4 w-4" />
-                Tag
-              </Button>
-            </div>
-
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <PenTool className="h-5 w-5" />
+              Create Post
+            </CardTitle>
+            
+            {/* Circular Mailbox Button */}
             <Button
-              onClick={handlePost}
-              disabled={isPosting || (!content.trim() && !selectedImage && !selectedVideo)}
-              className="px-6"
+              variant="outline"
+              size="sm"
+              onClick={() => setIsMailboxOpen(true)}
+              className="relative rounded-full h-10 w-10 p-0"
             >
-              {isPosting ? "Posting..." : "Post"}
+              <Mail className="h-4 w-4" />
+              {mailboxUnreadCount > 0 && (
+                <Badge 
+                  variant="destructive" 
+                  className="absolute -top-2 -right-2 h-5 w-5 p-0 flex items-center justify-center text-xs"
+                >
+                  {mailboxUnreadCount > 99 ? "99+" : mailboxUnreadCount}
+                </Badge>
+              )}
             </Button>
           </div>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <Tabs value={activeTab} onValueChange={setActiveTab}>
+              <TabsList className="grid w-full grid-cols-3">
+                <TabsTrigger value="text">
+                  <PenTool className="h-4 w-4 mr-2" />
+                  Text
+                </TabsTrigger>
+                <TabsTrigger value="image">
+                  <Image className="h-4 w-4 mr-2" />
+                  Image
+                </TabsTrigger>
+                <TabsTrigger value="video">
+                  <Video className="h-4 w-4 mr-2" />
+                  Video
+                </TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="text" className="space-y-4">
+                <Textarea
+                  placeholder="What's on your mind? Use @username to mention someone..."
+                  value={content}
+                  onChange={(e) => setContent(e.target.value)}
+                  className="min-h-[100px] resize-none"
+                />
+              </TabsContent>
+
+              <TabsContent value="image" className="space-y-4">
+                <Textarea
+                  placeholder="Add a caption to your image..."
+                  value={content}
+                  onChange={(e) => setContent(e.target.value)}
+                  className="min-h-[80px] resize-none"
+                />
+                
+                <div className="space-y-4">
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">Image URL</label>
+                    <Input
+                      type="url"
+                      placeholder="https://example.com/image.jpg"
+                      value={imageUrl}
+                      onChange={(e) => setImageUrl(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="text-center text-muted-foreground">or</div>
+
+                  <DevicePhotoUpload
+                    onPhotoSelect={setDevicePhoto}
+                    selectedPhoto={devicePhoto}
+                  />
+
+                  <div className="text-center text-muted-foreground">or</div>
+
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">Upload GIF</label>
+                    <Input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/gif"
+                      onChange={handleGifUpload}
+                      className="cursor-pointer"
+                    />
+                    {gifUrl && (
+                      <div className="mt-2">
+                        <img
+                          src={gifUrl || "/placeholder.svg"}
+                          alt="Selected GIF"
+                          className="max-w-full h-32 object-cover rounded border"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {(imageUrl || devicePhoto || gifUrl) && (
+                  <div className="border rounded-lg p-2">
+                    <p className="text-sm text-muted-foreground mb-2">Preview:</p>
+                    <img
+                      src={imageUrl || devicePhoto || gifUrl}
+                      alt="Preview"
+                      className="max-w-full h-32 object-cover rounded"
+                      onError={(e) => {
+                        e.currentTarget.src = '/placeholder.svg?height=128&width=200&text=Image+Error'
+                      }}
+                    />
+                  </div>
+                )}
+              </TabsContent>
+
+              <TabsContent value="video" className="space-y-4">
+                <Textarea
+                  placeholder="Add a caption to your video..."
+                  value={content}
+                  onChange={(e) => setContent(e.target.value)}
+                  className="min-h-[80px] resize-none"
+                />
+                
+                <div className="space-y-4">
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">Video URL</label>
+                    <Input
+                      type="url"
+                      placeholder="https://example.com/video.mp4"
+                      value={videoUrl}
+                      onChange={(e) => setVideoUrl(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="text-center text-muted-foreground">or</div>
+
+                  <DeviceVideoUpload
+                    onVideoSelect={setDeviceVideo}
+                    selectedVideo={deviceVideo}
+                  />
+                </div>
+
+                {(videoUrl || deviceVideo) && (
+                  <div className="border rounded-lg p-2">
+                    <p className="text-sm text-muted-foreground mb-2">Preview:</p>
+                    <video
+                      src={videoUrl || deviceVideo}
+                      className="max-w-full h-32 object-cover rounded"
+                      controls
+                      onError={(e) => {
+                        console.error("Video preview error:", e)
+                      }}
+                    />
+                  </div>
+                )}
+              </TabsContent>
+            </Tabs>
+
+            <Button type="submit" className="w-full">
+              Create Post
+            </Button>
+          </form>
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Tips for Great Posts</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-2 text-sm text-muted-foreground">
-            <p>• Share authentic moments and experiences</p>
-            <p>• Use clear, high-quality images and videos</p>
-            <p>• Engage with your community through comments</p>
-            <p>• Be respectful and follow community guidelines</p>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
+      {/* Fusionary Mailbox */}
+      <FusionaryMailbox 
+        isOpen={isMailboxOpen} 
+        onClose={() => setIsMailboxOpen(false)} 
+      />
+    </>
   )
 }

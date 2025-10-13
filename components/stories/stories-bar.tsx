@@ -1,149 +1,129 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useUser } from "@/context/user-context"
-import { Button } from "@/components/ui/button"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Badge } from "@/components/ui/badge"
-import CreateStory from "./create-story"
-import StoryViewer from "./story-viewer"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Button } from "@/components/ui/button"
 import { Plus } from "lucide-react"
+import StoryViewer from "@/components/stories/story-viewer"
+import CreateStory from "@/components/stories/create-story"
+import { persistentStorage } from "@/lib/persistent-storage"
 import type { Story } from "@/lib/types"
 
-const SAMPLE_STORIES: Story[] = [
-  {
-    id: "1",
-    username: "alice_wonder",
-    content: "Beautiful sunset today! 🌅",
-    imageUrl: "/placeholder.svg?height=400&width=300&text=Sunset+Story",
-    timestamp: Date.now() - 3600000,
-    expiresAt: Date.now() + 82800000, // 23 hours from now
-    viewers: ["user1", "user2"],
-  },
-  {
-    id: "2",
-    username: "bob_builder",
-    content: "Working on a new project",
-    imageUrl: "/placeholder.svg?height=400&width=300&text=Project+Story",
-    timestamp: Date.now() - 7200000,
-    expiresAt: Date.now() + 79200000, // 22 hours from now
-    viewers: ["user3"],
-  },
-  {
-    id: "3",
-    username: "charlie_chef",
-    content: "Cooking something delicious!",
-    videoUrl: "/placeholder.mp4",
-    timestamp: Date.now() - 1800000,
-    expiresAt: Date.now() + 84600000, // 23.5 hours from now
-    viewers: [],
-  },
-]
-
 export default function StoriesBar() {
-  const { username } = useUser()
-  const [stories] = useState<Story[]>(SAMPLE_STORIES)
+  const { username, following, profilePhoto } = useUser()
+  const [stories, setStories] = useState<Story[]>([])
+  const [viewingStoryIndex, setViewingStoryIndex] = useState<number | null>(null)
   const [showCreateStory, setShowCreateStory] = useState(false)
-  const [selectedStory, setSelectedStory] = useState<Story | null>(null)
 
-  // Filter out expired stories
-  const activeStories = stories.filter((story) => story.expiresAt > Date.now())
+  const fetchStories = () => {
+    // Get all stories from persistent storage
+    const allStories = persistentStorage.getStories()
 
-  // Group stories by user
-  const storiesByUser = activeStories.reduce(
-    (acc, story) => {
-      if (!acc[story.username]) {
-        acc[story.username] = []
-      }
-      acc[story.username].push(story)
-      return acc
-    },
-    {} as Record<string, Story[]>,
-  )
+    // Filter out expired stories
+    const now = Date.now()
+    const validStories = allStories.filter((story) => story.expiresAt > now)
 
-  const userStoryGroups = Object.entries(storiesByUser)
+    // Sort stories: user's story first, then followed users, then others
+    const sortedStories = validStories.sort((a, b) => {
+      // User's own story comes first
+      if (a.username === username) return -1
+      if (b.username === username) return 1
 
-  if (showCreateStory) {
-    return <CreateStory onClose={() => setShowCreateStory(false)} />
+      // Then stories from followed users
+      const aIsFollowed = following.includes(a.username)
+      const bIsFollowed = following.includes(b.username)
+
+      if (aIsFollowed && !bIsFollowed) return -1
+      if (!aIsFollowed && bIsFollowed) return 1
+
+      // Then sort by last updated
+      return b.lastUpdated - a.lastUpdated
+    })
+
+    setStories(sortedStories)
   }
 
-  if (selectedStory) {
-    return (
-      <StoryViewer
-        story={selectedStory}
-        onClose={() => setSelectedStory(null)}
-        onNext={() => {
-          // Find next story logic here
-          setSelectedStory(null)
-        }}
-        onPrevious={() => {
-          // Find previous story logic here
-          setSelectedStory(null)
-        }}
-      />
-    )
+  useEffect(() => {
+    fetchStories()
+
+    // Refresh stories every 60 seconds
+    const interval = setInterval(fetchStories, 60000)
+    return () => clearInterval(interval)
+  }, [username, following])
+
+  const handleStoryCreated = () => {
+    fetchStories()
   }
+
+  const hasUserStory = stories.some((story) => story.username === username)
 
   return (
-    <div className="w-full">
-      <ScrollArea className="w-full">
-        <div className="flex space-x-3 p-2">
-          {/* Add Story Button */}
-          {username && (
-            <div className="flex-shrink-0 text-center">
+    <>
+      <div className="mb-6">
+        <ScrollArea className="w-full" orientation="horizontal">
+          <div className="flex gap-4 pb-2 px-1">
+            {/* Create story button */}
+            <div className="flex flex-col items-center">
               <Button
                 variant="outline"
-                className="h-16 w-16 rounded-full p-0 border-2 border-dashed bg-transparent"
+                size="icon"
+                className="h-16 w-16 rounded-full relative"
                 onClick={() => setShowCreateStory(true)}
               >
-                <Plus className="h-6 w-6" />
-              </Button>
-              <p className="text-xs mt-1 text-muted-foreground">Your Story</p>
-            </div>
-          )}
-
-          {/* Stories */}
-          {userStoryGroups.map(([user, userStories]) => {
-            const hasUnviewedStories = userStories.some((story) => !story.viewers.includes(username || ""))
-
-            return (
-              <div key={user} className="flex-shrink-0 text-center">
-                <div className="relative">
-                  <Button
-                    variant="ghost"
-                    className="h-16 w-16 rounded-full p-0"
-                    onClick={() => setSelectedStory(userStories[0])}
-                  >
-                    <Avatar
-                      className={`h-14 w-14 ${hasUnviewedStories ? "ring-2 ring-primary ring-offset-2" : "ring-2 ring-gray-300"}`}
-                    >
-                      <AvatarFallback>{user.substring(0, 2).toUpperCase()}</AvatarFallback>
+                {hasUserStory ? (
+                  <>
+                    <Avatar className="h-full w-full border-2 border-primary">
+                      <AvatarImage src={profilePhoto || undefined} />
+                      <AvatarFallback>{username?.substring(0, 2).toUpperCase() || "ME"}</AvatarFallback>
                     </Avatar>
-                  </Button>
-                  {userStories.length > 1 && (
-                    <Badge className="absolute -top-1 -right-1 h-5 w-5 p-0 text-xs">{userStories.length}</Badge>
-                  )}
-                </div>
-                <p className="text-xs mt-1 text-muted-foreground truncate w-16">{user}</p>
-              </div>
-            )
-          })}
-
-          {/* No Stories Message */}
-          {userStoryGroups.length === 0 && !username && (
-            <div className="flex-1 text-center py-4">
-              <p className="text-sm text-muted-foreground">Sign in to view and create stories</p>
+                    <div className="absolute bottom-0 right-0 bg-primary text-primary-foreground rounded-full h-6 w-6 flex items-center justify-center border-2 border-background">
+                      <Plus className="h-4 w-4" />
+                    </div>
+                  </>
+                ) : (
+                  <Plus className="h-6 w-6" />
+                )}
+              </Button>
+              <span className="text-xs mt-1 text-center">{hasUserStory ? "Your story" : "Create"}</span>
             </div>
-          )}
 
-          {userStoryGroups.length === 0 && username && (
-            <div className="flex-1 text-center py-4">
-              <p className="text-sm text-muted-foreground">No stories available. Be the first to share one!</p>
-            </div>
-          )}
-        </div>
-      </ScrollArea>
-    </div>
+            {/* Story avatars */}
+            {stories.map(
+              (story, index) =>
+                story.username !== username && (
+                  <div key={story.id} className="flex flex-col items-center">
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-16 w-16 rounded-full p-0 overflow-hidden border-2 border-primary"
+                      onClick={() => setViewingStoryIndex(index)}
+                    >
+                      <Avatar className="h-full w-full">
+                        <AvatarImage src={story.userAvatar || undefined} />
+                        <AvatarFallback>{story.username.substring(0, 2).toUpperCase()}</AvatarFallback>
+                      </Avatar>
+                    </Button>
+                    <span className="text-xs mt-1 text-center truncate w-16">{story.username}</span>
+                  </div>
+                ),
+            )}
+          </div>
+        </ScrollArea>
+      </div>
+
+      {/* Story viewer */}
+      {viewingStoryIndex !== null && (
+        <StoryViewer
+          stories={stories}
+          initialStoryIndex={viewingStoryIndex}
+          onClose={() => setViewingStoryIndex(null)}
+        />
+      )}
+
+      {/* Create story dialog */}
+      {showCreateStory && <CreateStory onStoryCreated={handleStoryCreated} onClose={() => setShowCreateStory(false)} />}
+    </>
   )
 }
