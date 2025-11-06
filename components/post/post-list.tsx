@@ -1,52 +1,98 @@
 "use client"
 
-import { useState } from "react"
-import { useUser } from "@/context/user-context"
+import type { Post } from "@/lib/types"
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
-import { Textarea } from "@/components/ui/textarea"
-import { formatDate, generateId } from "@/lib/utils"
-import { persistentStorage } from "@/lib/persistent-storage"
-import { MessageSquare, Heart, Share2, MoreHorizontal, Send } from 'lucide-react'
-import type { Post, Comment } from "@/lib/types"
-import CallButton from "@/components/calling/call-button"
+import CommentForm from "@/components/post/comment-form"
+import CommentList from "@/components/post/comment-list"
+import VideoPlayer from "@/components/video/video-player"
+import { formatDate } from "@/lib/utils"
+import { useUser } from "@/context/user-context"
+import { ThumbsUp, ThumbsDown, MessageCircle, UserPlus, UserMinus } from "lucide-react"
+import { useState } from "react"
 
 interface PostListProps {
   posts: Post[]
-  onCommentAdded?: () => void
+  onCommentAdded: () => void
   onPostUpdated?: () => void
 }
 
-export default function PostList({ posts, onCommentAdded, onPostUpdated }: PostListProps) {
-  return (
-    <div className="space-y-4">
-      {posts.map((post) => (
-        <PostItem key={post.id} post={post} onCommentAdded={onCommentAdded} onPostUpdated={onPostUpdated} />
-      ))}
-    </div>
-  )
-}
-
-interface PostItemProps {
-  post: Post
-  onCommentAdded?: () => void
-  onPostUpdated?: () => void
-}
-
-function PostItem({ post, onCommentAdded, onPostUpdated }: PostItemProps) {
+export default function PostList({ posts = [], onCommentAdded, onPostUpdated }: PostListProps) {
   const { username, isFollowing, addFollowing, removeFollowing } = useUser()
-  const [showComments, setShowComments] = useState(false)
-  const [commentText, setCommentText] = useState("")
-  const [isSubmittingComment, setIsSubmittingComment] = useState(false)
+  const [expandedComments, setExpandedComments] = useState<Record<string, boolean>>({})
 
-  // Format post content to highlight mentions
-  const formatContent = (content: string) => {
+  if (!posts || posts.length === 0) {
+    return <div className="text-center py-8">No posts yet. Be the first to post!</div>
+  }
+
+  const toggleComments = (postId: string) => {
+    setExpandedComments((prev) => ({
+      ...prev,
+      [postId]: !prev[postId],
+    }))
+  }
+
+  const handleLike = async (postId: string) => {
+    if (!username) return
+
+    try {
+      const response = await fetch(`/api/posts/${postId}/like`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ username }),
+      })
+
+      if (response.ok && onPostUpdated) {
+        onPostUpdated()
+      }
+    } catch (error) {
+      console.error("Error liking post:", error)
+    }
+  }
+
+  const handleDislike = async (postId: string) => {
+    if (!username) return
+
+    try {
+      const response = await fetch(`/api/posts/${postId}/dislike`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ username }),
+      })
+
+      if (response.ok && onPostUpdated) {
+        onPostUpdated()
+      }
+    } catch (error) {
+      console.error("Error disliking post:", error)
+    }
+  }
+
+  const handleFollowUser = (postUsername: string) => {
+    if (username && postUsername !== username) {
+      addFollowing(postUsername)
+    }
+  }
+
+  const handleUnfollowUser = (postUsername: string) => {
+    if (username) {
+      removeFollowing(postUsername)
+    }
+  }
+
+  // Function to render content with @mentions highlighted
+  const renderContentWithMentions = (content: string) => {
     const parts = content.split(/(@\w+)/g)
     return parts.map((part, index) => {
       if (part.startsWith("@")) {
+        const username = part.substring(1)
         return (
-          <span key={index} className="text-primary font-medium">
+          <span key={index} className="text-primary font-semibold hover:underline cursor-pointer">
             {part}
           </span>
         )
@@ -55,224 +101,128 @@ function PostItem({ post, onCommentAdded, onPostUpdated }: PostItemProps) {
     })
   }
 
-  const handleLike = () => {
-    if (!username) return
-
-    const updatedPost = { ...post }
-
-    if (!updatedPost.likes) {
-      updatedPost.likes = []
-    }
-
-    const userLikeIndex = updatedPost.likes.indexOf(username)
-
-    if (userLikeIndex >= 0) {
-      // Unlike
-      updatedPost.likes.splice(userLikeIndex, 1)
-    } else {
-      // Like
-      updatedPost.likes.push(username)
-    }
-
-    persistentStorage.savePost(updatedPost)
-    if (onPostUpdated) onPostUpdated()
-  }
-
-  const handleFollow = () => {
-    if (post.username === username) return
-
-    if (isFollowing(post.username)) {
-      removeFollowing(post.username)
-    } else {
-      addFollowing(post.username)
-    }
-  }
-
-  const handleAddComment = () => {
-    if (!username || !commentText.trim()) return
-
-    setIsSubmittingComment(true)
-
-    const newComment: Comment = {
-      id: generateId(),
-      username,
-      content: commentText.trim(),
-      timestamp: Date.now(),
-    }
-
-    persistentStorage.addComment(post.id, newComment)
-    setCommentText("")
-    setIsSubmittingComment(false)
-
-    if (onCommentAdded) onCommentAdded()
-  }
-
-  const isLiked = username && post.likes?.includes(username)
-  const isPostOwner = username === post.username
-  const isFollowed = !isPostOwner && isFollowing(post.username)
-  const commentCount = post.comments?.length || 0
-  const likeCount = post.likes?.length || 0
-
   return (
-    <Card>
-      <CardHeader className="pb-2">
-        <div className="flex justify-between items-start">
-          <div className="flex items-center">
-            <Avatar className="h-8 w-8 mr-2">
-              <AvatarFallback>{post.username.substring(0, 2).toUpperCase()}</AvatarFallback>
-            </Avatar>
-            <div>
-              <div className="flex items-center">
-                <span className="font-medium">{post.username}</span>
-                {!isPostOwner && (
+    <div className="space-y-6">
+      {posts.map((post) => {
+        const isLiked = post.likes?.includes(username) || false
+        const isDisliked = post.dislikes?.includes(username) || false
+        const showComments = expandedComments[post.id] || false
+        const isFollowingAuthor = isFollowing(post.username)
+        const isSelf = post.username === username
+
+        return (
+          <Card key={post.id} className="card-transparent overflow-hidden">
+            <CardHeader className="bg-muted/30 pb-2">
+              <div className="flex justify-between items-start">
+                <div className="flex items-center">
+                  <Avatar className="h-8 w-8 mr-2">
+                    <AvatarFallback>{post.username.substring(0, 2).toUpperCase()}</AvatarFallback>
+                  </Avatar>
+                  <div>
+                    <h3 className="font-bold">{post.username}</h3>
+                    <p className="text-xs text-muted-foreground">{formatDate(post.timestamp)}</p>
+                  </div>
+                </div>
+
+                {username && !isSelf && (
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-6 ml-2 text-xs"
-                    onClick={handleFollow}
-                    disabled={!username}
+                    onClick={() =>
+                      isFollowingAuthor ? handleUnfollowUser(post.username) : handleFollowUser(post.username)
+                    }
                   >
-                    {isFollowed ? "Unfollow" : "Follow"}
+                    {isFollowingAuthor ? (
+                      <>
+                        <UserMinus className="h-4 w-4 mr-1" />
+                        Unfollow
+                      </>
+                    ) : (
+                      <>
+                        <UserPlus className="h-4 w-4 mr-1" />
+                        Follow
+                      </>
+                    )}
                   </Button>
                 )}
               </div>
-              <p className="text-xs text-muted-foreground">{formatDate(post.timestamp)}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-1">
-            {!isPostOwner && username && <CallButton recipientUsername={post.username} />}
-            <Button variant="ghost" size="icon" className="h-8 w-8">
-              <MoreHorizontal className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-      </CardHeader>
+            </CardHeader>
 
-      <CardContent className="pb-3">
-        <p className="whitespace-pre-wrap">{formatContent(post.content)}</p>
+            <CardContent className="pt-4 pb-2">
+              {post.type === "video" && post.videoUrl && (
+                <div className="mb-4">
+                  <VideoPlayer url={post.videoUrl} />
+                </div>
+              )}
 
-        {post.imageUrl && (
-          <div className="mt-3 rounded-md overflow-hidden">
-            <img 
-              src={post.imageUrl || "/placeholder.svg"} 
-              alt="Post image" 
-              className="w-full object-cover"
-              onError={(e) => {
-                console.error("Post image load error:", e)
-                e.currentTarget.src = "/placeholder.svg?height=400&width=600&text=Image+Not+Available"
-              }}
-            />
-          </div>
-        )}
-
-        {post.gifUrl && (
-          <div className="mt-3 rounded-md overflow-hidden">
-            <img 
-              src={post.gifUrl || "/placeholder.svg"} 
-              alt="Post GIF" 
-              className="w-full object-cover"
-              onError={(e) => {
-                console.error("Post GIF load error:", e)
-                e.currentTarget.src = "/placeholder.svg?height=400&width=600&text=GIF+Not+Available"
-              }}
-            />
-          </div>
-        )}
-
-        {post.videoUrl && (
-          <div className="mt-3 rounded-md overflow-hidden">
-            <video 
-              src={post.videoUrl || "/placeholder.svg"} 
-              controls
-              className="w-full object-cover max-h-96"
-              onError={(e) => {
-                console.error("Post video load error:", e)
-                e.currentTarget.style.display = 'none'
-              }}
-            />
-          </div>
-        )}
-      </CardContent>
-
-      <CardFooter className="pt-0 flex-col items-stretch">
-        <div className="flex justify-between items-center pb-3">
-          <div className="flex items-center gap-4">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="flex items-center gap-1 h-8 px-2"
-              onClick={handleLike}
-              disabled={!username}
-            >
-              <Heart className="h-4 w-4" fill={isLiked ? "currentColor" : "none"} />
-              <span>{likeCount > 0 ? likeCount : ""}</span>
-            </Button>
-
-            <Button
-              variant="ghost"
-              size="sm"
-              className="flex items-center gap-1 h-8 px-2"
-              onClick={() => setShowComments(!showComments)}
-            >
-              <MessageSquare className="h-4 w-4" />
-              <span>{commentCount > 0 ? commentCount : ""}</span>
-            </Button>
-
-            <Button variant="ghost" size="sm" className="flex items-center gap-1 h-8 px-2">
-              <Share2 className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-
-        {showComments && (
-          <div className="pt-2 border-t">
-            {post.comments && post.comments.length > 0 ? (
-              <div className="space-y-3 mb-3 max-h-40 overflow-y-auto">
-                {post.comments.map((comment) => (
-                  <div key={comment.id} className="flex items-start gap-2">
-                    <Avatar className="h-6 w-6">
-                      <AvatarFallback>{comment.username.substring(0, 2).toUpperCase()}</AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1">
-                      <div className="bg-muted rounded-md px-3 py-2">
-                        <span className="font-medium text-sm">{comment.username}</span>
-                        <p className="text-sm">{comment.content}</p>
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-1">{formatDate(comment.timestamp)}</p>
-                    </div>
+              {post.type === "photo" && post.photoUrl && (
+                <div className="mb-4">
+                  <div className="aspect-square max-h-96 bg-black rounded-md overflow-hidden">
+                    <img
+                      src={post.photoUrl || "/placeholder.svg"}
+                      alt="Post"
+                      className="w-full h-full object-contain"
+                    />
                   </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground text-center py-2">No comments yet</p>
-            )}
+                </div>
+              )}
 
-            <div className="flex gap-2 mt-2">
-              <Avatar className="h-6 w-6">
-                <AvatarImage src={undefined || "/placeholder.svg"} />
-                <AvatarFallback>{username ? username.substring(0, 2).toUpperCase() : "U"}</AvatarFallback>
-              </Avatar>
-              <div className="flex-1 flex gap-2">
-                <Textarea
-                  placeholder="Write a comment..."
-                  value={commentText}
-                  onChange={(e) => setCommentText(e.target.value)}
-                  className="min-h-0 h-9 py-2 resize-none"
-                  disabled={!username || isSubmittingComment}
-                />
+              {post.type === "gif" && post.gifUrl && (
+                <div className="mb-4">
+                  <div className="aspect-square max-h-96 bg-black rounded-md overflow-hidden">
+                    <img src={post.gifUrl || "/placeholder.svg"} alt="GIF" className="w-full h-full object-contain" />
+                  </div>
+                </div>
+              )}
+
+              <p className="whitespace-pre-wrap">{renderContentWithMentions(post.content)}</p>
+            </CardContent>
+
+            <CardFooter className="flex flex-col items-stretch p-0">
+              <div className="p-2 border-t flex items-center">
                 <Button
-                  size="icon"
-                  className="h-9 w-9"
-                  disabled={!username || !commentText.trim() || isSubmittingComment}
-                  onClick={handleAddComment}
+                  variant={isLiked ? "default" : "ghost"}
+                  size="sm"
+                  className="gap-1"
+                  onClick={() => handleLike(post.id)}
+                  disabled={!username}
                 >
-                  <Send className="h-4 w-4" />
+                  <ThumbsUp className="h-4 w-4" />
+                  <span>{post.likes?.length || 0}</span>
+                </Button>
+
+                <Button
+                  variant={isDisliked ? "default" : "ghost"}
+                  size="sm"
+                  className="gap-1"
+                  onClick={() => handleDislike(post.id)}
+                  disabled={!username}
+                >
+                  <ThumbsDown className="h-4 w-4" />
+                  <span>{post.dislikes?.length || 0}</span>
+                </Button>
+
+                <Button variant="ghost" size="sm" className="gap-1 ml-auto" onClick={() => toggleComments(post.id)}>
+                  <MessageCircle className="h-4 w-4" />
+                  <span>{post.comments?.length || 0}</span>
                 </Button>
               </div>
-            </div>
-          </div>
-        )}
-      </CardFooter>
-    </Card>
+
+              {showComments && (
+                <>
+                  <div className="border-t p-4">
+                    <CommentList comments={post.comments || []} />
+                  </div>
+
+                  <div className="border-t p-4">
+                    <CommentForm postId={post.id} onCommentAdded={onCommentAdded} />
+                  </div>
+                </>
+              )}
+            </CardFooter>
+          </Card>
+        )
+      })}
+    </div>
   )
 }

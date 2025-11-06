@@ -1,21 +1,84 @@
+export interface User {
+  id: string
+  username: string
+  password: string
+  bio?: string
+  photoUrl?: string
+  createdAt: number
+}
+
 export interface Post {
   id: string
   username: string
   content: string
-  timestamp: number
-  likes?: string[]
-  comments?: Comment[]
   imageUrl?: string
-  gifUrl?: string
   videoUrl?: string
-  mentions?: string[]
+  gifUrl?: string
+  createdAt: number
+  likes: string[]
+  dislikes: string[]
+  comments: Comment[]
 }
 
 export interface Comment {
   id: string
   username: string
   content: string
+  createdAt: number
+}
+
+export interface Community {
+  id: string
+  name: string
+  description: string
+  creator: string
+  members: string[]
+  createdAt: number
+}
+
+export interface CommunityPost {
+  id: string
+  communityId: string
+  username: string
+  content: string
+  createdAt: number
+  upvotes: string[]
+  downvotes: string[]
+}
+
+export interface Video {
+  id: string
+  username: string
+  title: string
+  url: string
+  thumbnail?: string
   timestamp: number
+  views: number
+  likes: number
+}
+
+export interface UserProfile {
+  username: string
+  password?: string
+  bio: string
+  photoUrl: string
+  backgroundUrl?: string
+  backgroundBlur?: number
+  backgroundOpacity?: number
+  backgroundBrightness?: number
+  backgroundParallax?: boolean
+  backgroundFilter?: string
+  friends: string[]
+  communities?: string[]
+  createdAt: number
+}
+
+export interface FriendRequest {
+  id: string
+  from: string
+  to: string
+  timestamp: number
+  status: "pending" | "accepted" | "declined"
 }
 
 export interface MarketplaceListing {
@@ -24,145 +87,49 @@ export interface MarketplaceListing {
   description: string
   price: number
   category: string
-  location: string
-  imageUrl: string
-  sellerUsername: string
-  sellerJoinDate: number
-  timestamp: number
-  contactPhone: string | null
-  contactEmail: string | null
-  contactAddress: string | null
-  status: "active" | "sold" | "pending"
-}
-
-export interface StoryItem {
-  id: string
-  type: "image" | "video"
-  url: string
-  caption?: string
-  timestamp: number
-  muted?: boolean
-}
-
-export interface Story {
-  id: string
-  username: string
-  userAvatar: string | null
-  items: StoryItem[]
+  seller: string
+  imageUrl?: string
+  contactInfo: string
   createdAt: number
-  lastUpdated: number
-  expiresAt: number
-  privacy: "public" | "friends" | "close-friends"
-}
-
-export interface FriendList {
-  id: string
-  name: string
-  owner: string
-  members: string[]
-  createdAt: number
-  updatedAt: number
 }
 
 export interface VirtualPet {
+  id: string
   name: string
   type: string
-  emoji: string
-  owner: string
-  hunger: number
-  happiness: number
-  energy: number
-  hydration: number
   level: number
   experience: number
-  createdAt: number
-  lastVisit: number
-  items: string[]
-}
-
-export interface MusicTrack {
-  id: string
-  title: string
-  artist: string
-  url: string
-  coverArt?: string
-  duration: number
-  genre: string
-}
-
-export interface MusicPlaylist {
-  id: string
-  name: string
+  hunger: number
+  happiness: number
+  lastFed: number
+  lastPlayed: number
   owner: string
-  coverArt?: string
-  tracks: string[]
-  createdAt: number
-  updatedAt: number
 }
 
 export interface LiveStream {
   id: string
-  hostUsername: string
-  hostAvatar: string | null
   title: string
-  description: string
-  viewerCount: number
-  startedAt: number
-  tags: string[]
+  streamer: string
+  viewers: number
+  thumbnail?: string
+  category: string
   isLive: boolean
+  startedAt: number
 }
 
-export interface LiveStreamComment {
+export interface Chat {
   id: string
-  username: string
-  content: string
-  timestamp: number
+  participants: string[]
+  lastMessage?: string
+  lastMessageTime?: number
 }
 
 export interface Message {
   id: string
-  senderId: string
-  recipientId: string
+  chatId: string
+  sender: string
   content: string
   timestamp: number
-  type: "text" | "image" | "audio" | "video"
-  isRead: boolean
-}
-
-export interface Conversation {
-  otherUser: string
-  lastMessage: string
-  lastMessageTime: number
-  unreadCount: number
-}
-
-export interface CallSession {
-  id: string
-  callerId: string
-  recipientId: string
-  type: "voice" | "video"
-  status: "calling" | "connected" | "ended"
-  startTime: number
-  endTime?: number
-}
-
-export interface FriendRequest {
-  id: string
-  fromUsername: string
-  toUsername: string
-  timestamp: number
-  status: "pending" | "accepted" | "declined"
-}
-
-export interface Notification {
-  id: string
-  type: "call" | "message" | "friend_request"
-  fromUsername: string
-  toUsername: string
-  content: string
-  timestamp: number
-  isRead: boolean
-  callType?: "voice" | "video"
-  messageId?: string
-  friendRequestId?: string
+  type?: "text" | "image" | "video"
+  read: boolean
 }

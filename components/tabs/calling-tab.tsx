@@ -1,553 +1,345 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { useUser } from "@/context/user-context"
+import { useState, useEffect, useRef } from "react"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { Badge } from "@/components/ui/badge"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Phone, Video, Search, Clock, Users, PhoneCall, VideoIcon, UserPlus, AlertCircle, Check } from 'lucide-react'
-import { formatDate } from "@/lib/utils"
-import { persistentStorage } from "@/lib/persistent-storage"
-import CallInterface from "@/components/calling/call-interface"
-import type { CallSession, FriendRequest, Notification } from "@/lib/types"
+import { Phone, Video, Mic, MicOff, VideoIcon, VideoOff, PhoneOff, Plus } from "lucide-react"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 
-export default function CallingTab() {
-  const { username, following, addFollowing } = useUser()
-  const [searchQuery, setSearchQuery] = useState("")
-  const [friendSearchQuery, setFriendSearchQuery] = useState("")
-  const [activeCall, setActiveCall] = useState<{ type: "voice" | "video"; recipient: string } | null>(null)
-  const [callHistory, setCallHistory] = useState<CallSession[]>([])
-  const [onlineUsers, setOnlineUsers] = useState<string[]>([])
-  const [searchResults, setSearchResults] = useState<string[]>([])
-  const [searchError, setSearchError] = useState("")
-  const [searchSuccess, setSearchSuccess] = useState("")
+interface CallHistory {
+  id: string
+  caller: string
+  recipient: string
+  type: "voice" | "video"
+  duration: number
+  timestamp: number
+  status: "completed" | "missed" | "declined"
+}
 
-  // Simulate online users and call history
+interface CallingTabProps {
+  username: string
+}
+
+export default function CallingTab({ username }: CallingTabProps) {
+  const [callHistory, setCallHistory] = useState<CallHistory[]>([])
+  const [activeCall, setActiveCall] = useState<CallHistory | null>(null)
+  const [showNewCallDialog, setShowNewCallDialog] = useState(false)
+  const [callUsername, setCallUsername] = useState("")
+  const [callType, setCallType] = useState<"voice" | "video">("voice")
+  const [isMuted, setIsMuted] = useState(false)
+  const [isVideoOff, setIsVideoOff] = useState(false)
+  const [callDuration, setCallDuration] = useState(0)
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const streamRef = useRef<MediaStream | null>(null)
+
   useEffect(() => {
-    // Simulate some users being online
-    const simulatedOnlineUsers = following.slice(0, Math.min(5, following.length))
-    setOnlineUsers(simulatedOnlineUsers)
+    loadCallHistory()
+  }, [])
 
-    // Simulate call history
-    const simulatedHistory: CallSession[] = [
-      {
-        id: "1",
-        callerId: username || "user",
-        recipientId: following[0] || "demo_user",
-        type: "video",
-        status: "ended",
-        startTime: Date.now() - 3600000, // 1 hour ago
-        endTime: Date.now() - 3300000, // 55 minutes ago
-      },
-      {
-        id: "2",
-        callerId: following[1] || "demo_user2",
-        recipientId: username || "user",
-        type: "voice",
-        status: "ended",
-        startTime: Date.now() - 7200000, // 2 hours ago
-        endTime: Date.now() - 6900000, // 1 hour 55 minutes ago
-      },
-    ].filter(call => call.callerId !== call.recipientId)
+  useEffect(() => {
+    let interval: NodeJS.Timeout
+    if (activeCall) {
+      interval = setInterval(() => {
+        setCallDuration((prev) => prev + 1)
+      }, 1000)
+    }
+    return () => clearInterval(interval)
+  }, [activeCall])
 
-    setCallHistory(simulatedHistory)
-  }, [username, following])
+  const loadCallHistory = () => {
+    try {
+      const stored = localStorage.getItem("fusconn-call-history")
+      if (stored) {
+        setCallHistory(JSON.parse(stored))
+      }
+    } catch (error) {
+      console.error("Error loading call history:", error)
+    }
+  }
 
-  const searchForFriends = () => {
-    if (!friendSearchQuery.trim()) {
-      setSearchResults([])
-      setSearchError("")
+  const saveCallHistory = (updatedHistory: CallHistory[]) => {
+    localStorage.setItem("fusconn-call-history", JSON.stringify(updatedHistory))
+    setCallHistory(updatedHistory)
+  }
+
+  const startCall = async (type: "voice" | "video") => {
+    if (!username) {
+      alert("Please sign in to make calls")
       return
     }
 
-    // Get all registered usernames
-    const allUsernames = persistentStorage.getAllUsernames()
-    
-    // Filter usernames that match the search query and aren't already followed
-    const results = allUsernames.filter(user => 
-      user.toLowerCase().includes(friendSearchQuery.toLowerCase()) &&
-      user !== username &&
-      !following.includes(user)
-    )
-
-    if (results.length === 0) {
-      setSearchError("No users found with that name")
-      setSearchResults([])
-    } else {
-      setSearchError("")
-      setSearchResults(results)
-    }
-  }
-
-  const sendFriendRequest = (targetUsername: string) => {
-    if (!username) return
-
-    // Create friend request
-    const friendRequest: FriendRequest = {
-      id: Date.now().toString(),
-      fromUsername: username,
-      toUsername: targetUsername,
-      timestamp: Date.now(),
-      status: "pending"
+    if (!callUsername.trim()) {
+      alert("Please enter a username to call")
+      return
     }
 
-    // Save friend request
-    persistentStorage.saveFriendRequest(friendRequest)
-
-    // Create notification for the target user
-    const notification: Notification = {
-      id: Date.now().toString(),
-      type: "friend_request",
-      fromUsername: username,
-      toUsername: targetUsername,
-      content: `${username} sent you a friend request!`,
-      timestamp: Date.now(),
-      isRead: false,
-      friendRequestId: friendRequest.id
+    if (callUsername.toLowerCase() === username.toLowerCase()) {
+      alert("You can't call yourself")
+      return
     }
 
-    persistentStorage.saveNotification(notification)
-
-    setSearchSuccess(`Friend request sent to ${targetUsername}!`)
-    setSearchResults(searchResults.filter(user => user !== targetUsername))
-    
-    // Clear success message after 3 seconds
-    setTimeout(() => {
-      setSearchSuccess("")
-    }, 3000)
-  }
-
-  const startCall = (recipientUsername: string, type: "voice" | "video") => {
-    setActiveCall({ type, recipient: recipientUsername })
-
-    // Create call notification for the recipient
-    if (username) {
-      const callNotification: Notification = {
-        id: Date.now().toString(),
-        type: "call",
-        fromUsername: username,
-        toUsername: recipientUsername,
-        content: `${username} ${type === "video" ? "video" : "voice"} called you`,
-        timestamp: Date.now(),
-        isRead: false,
-        callType: type
+    try {
+      const constraints = {
+        audio: true,
+        video: type === "video",
       }
 
-      persistentStorage.saveNotification(callNotification)
+      const stream = await navigator.mediaDevices.getUserMedia(constraints)
+      streamRef.current = stream
+
+      if (videoRef.current && type === "video") {
+        videoRef.current.srcObject = stream
+      }
+
+      const newCall: CallHistory = {
+        id: `call-${Date.now()}`,
+        caller: username,
+        recipient: callUsername,
+        type,
+        duration: 0,
+        timestamp: Date.now(),
+        status: "completed",
+      }
+
+      setActiveCall(newCall)
+      setCallDuration(0)
+      setShowNewCallDialog(false)
+      setCallUsername("")
+    } catch (error) {
+      console.error("Error starting call:", error)
+      alert("Could not access camera/microphone. Please check permissions.")
     }
   }
 
   const endCall = () => {
-    if (activeCall) {
-      // Add to call history
-      const newCall: CallSession = {
-        id: Date.now().toString(),
-        callerId: username || "user",
-        recipientId: activeCall.recipient,
-        type: activeCall.type,
-        status: "ended",
-        startTime: Date.now() - 120000, // Simulate 2 minute call
-        endTime: Date.now(),
-      }
-      setCallHistory(prev => [newCall, ...prev])
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop())
+      streamRef.current = null
     }
+
+    if (activeCall) {
+      const completedCall = {
+        ...activeCall,
+        duration: callDuration,
+      }
+
+      const updatedHistory = [completedCall, ...callHistory]
+      saveCallHistory(updatedHistory)
+    }
+
     setActiveCall(null)
+    setCallDuration(0)
+    setIsMuted(false)
+    setIsVideoOff(false)
   }
 
-  const filteredFollowing = following.filter(user => 
-    user.toLowerCase().includes(searchQuery.toLowerCase())
-  )
+  const toggleMute = () => {
+    if (streamRef.current) {
+      streamRef.current.getAudioTracks().forEach((track) => {
+        track.enabled = !track.enabled
+      })
+      setIsMuted(!isMuted)
+    }
+  }
 
-  const filteredHistory = callHistory.filter(call => {
-    const otherUser = call.callerId === username ? call.recipientId : call.callerId
-    return otherUser.toLowerCase().includes(searchQuery.toLowerCase())
-  })
+  const toggleVideo = () => {
+    if (streamRef.current) {
+      streamRef.current.getVideoTracks().forEach((track) => {
+        track.enabled = !track.enabled
+      })
+      setIsVideoOff(!isVideoOff)
+    }
+  }
+
+  const formatDuration = (seconds: number) => {
+    const mins = Math.floor(seconds / 60)
+    const secs = seconds % 60
+    return `${mins}:${secs.toString().padStart(2, "0")}`
+  }
+
+  const formatTimestamp = (timestamp: number) => {
+    const minutes = Math.floor((Date.now() - timestamp) / 60000)
+    if (minutes < 60) return `${minutes}m ago`
+    const hours = Math.floor(minutes / 60)
+    if (hours < 24) return `${hours}h ago`
+    const days = Math.floor(hours / 24)
+    return `${days}d ago`
+  }
 
   if (!username) {
     return (
-      <div className="text-center py-8">
-        <Phone className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-        <div className="flex items-center justify-center gap-3 mb-4">
-          <img 
-            src="/images/fusionary-logo.webp" 
-            alt="Fusionary Connectra Logo" 
-            className="w-8 h-8 object-contain"
-            onError={(e) => {
-              console.error("Logo load error:", e)
-              e.currentTarget.style.display = 'none'
-            }}
-          />
-          <h3 className="text-lg font-medium">Fusionary Connectra</h3>
-          <img 
-            src="/images/fusionary-logo.webp" 
-            alt="Fusionary Connectra Logo" 
-            className="w-8 h-8 object-contain"
-            onError={(e) => {
-              console.error("Logo load error:", e)
-              e.currentTarget.style.display = 'none'
-            }}
-          />
-        </div>
-        <p className="text-muted-foreground">Please set your username in the Profile tab to use calling features</p>
-      </div>
+      <Card className="bg-white shadow-md">
+        <CardContent className="py-12 text-center">
+          <Phone className="h-16 w-16 mx-auto mb-4 text-gray-400" />
+          <h3 className="text-lg font-medium mb-2">Sign In Required</h3>
+          <p className="text-muted-foreground">Please sign in to make calls</p>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (activeCall) {
+    return (
+      <Card className="bg-white shadow-md">
+        <CardContent className="py-8">
+          <div className="text-center space-y-6">
+            {activeCall.type === "video" ? (
+              <div className="relative aspect-video bg-gray-900 rounded-lg overflow-hidden">
+                <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+                {isVideoOff && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
+                    <Avatar className="h-24 w-24">
+                      <AvatarFallback className="text-4xl">{username.charAt(0).toUpperCase()}</AvatarFallback>
+                    </Avatar>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <Avatar className="h-32 w-32 mx-auto">
+                <AvatarFallback className="text-5xl">{activeCall.recipient.charAt(0).toUpperCase()}</AvatarFallback>
+              </Avatar>
+            )}
+
+            <div>
+              <h2 className="text-2xl font-bold">@{activeCall.recipient}</h2>
+              <p className="text-lg text-muted-foreground">{formatDuration(callDuration)}</p>
+            </div>
+
+            <div className="flex items-center justify-center gap-4">
+              <Button
+                size="lg"
+                variant={isMuted ? "destructive" : "outline"}
+                className="rounded-full h-16 w-16"
+                onClick={toggleMute}
+              >
+                {isMuted ? <MicOff className="h-6 w-6" /> : <Mic className="h-6 w-6" />}
+              </Button>
+
+              {activeCall.type === "video" && (
+                <Button
+                  size="lg"
+                  variant={isVideoOff ? "destructive" : "outline"}
+                  className="rounded-full h-16 w-16"
+                  onClick={toggleVideo}
+                >
+                  {isVideoOff ? <VideoOff className="h-6 w-6" /> : <VideoIcon className="h-6 w-6" />}
+                </Button>
+              )}
+
+              <Button size="lg" variant="destructive" className="rounded-full h-16 w-16" onClick={endCall}>
+                <PhoneOff className="h-6 w-6" />
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
     )
   }
 
   return (
-    <>
-      <div className="space-y-6">
-        <div className="text-center">
-          <div className="flex items-center justify-center gap-3 mb-2">
-            <img 
-              src="/images/fusionary-logo.webp" 
-              alt="Fusionary Connectra Logo" 
-              className="w-10 h-10 object-contain"
-              onError={(e) => {
-                console.error("Logo load error:", e)
-                e.currentTarget.style.display = 'none'
-              }}
-            />
-            <h2 className="text-2xl font-bold">Fusionary Connectra</h2>
-            <img 
-              src="/images/fusionary-logo.webp" 
-              alt="Fusionary Connectra Logo" 
-              className="w-10 h-10 object-contain"
-              onError={(e) => {
-                console.error("Logo load error:", e)
-                e.currentTarget.style.display = 'none'
-              }}
-            />
-          </div>
-          <p className="text-muted-foreground">Connect with friends through voice and video calls</p>
-        </div>
-
-        <div className="relative">
-          <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search contacts..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-8"
-          />
-        </div>
-
-        <Tabs defaultValue="contacts" className="w-full">
-          <TabsList className="grid grid-cols-4 mb-6">
-            <TabsTrigger value="contacts">
-              <Users className="h-4 w-4 mr-2" />
-              Contacts
-            </TabsTrigger>
-            <TabsTrigger value="add-friends">
-              <UserPlus className="h-4 w-4 mr-2" />
-              Add Friends
-            </TabsTrigger>
-            <TabsTrigger value="online">
-              <Phone className="h-4 w-4 mr-2" />
-              Online
-            </TabsTrigger>
-            <TabsTrigger value="history">
-              <Clock className="h-4 w-4 mr-2" />
-              History
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="add-friends" className="mt-0">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center">
-                  <UserPlus className="h-5 w-5 mr-2" />
-                  Add Fusionary Friends
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      placeholder="Search by Fusionary name..."
-                      value={friendSearchQuery}
-                      onChange={(e) => setFriendSearchQuery(e.target.value)}
-                      className="pl-8"
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          searchForFriends()
-                        }
+    <div className="space-y-4">
+      <Card className="bg-white shadow-md">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-2xl font-bold text-blue-600 flex items-center gap-2">
+              <Phone className="h-6 w-6" />
+              Calling
+            </CardTitle>
+            <Dialog open={showNewCallDialog} onOpenChange={setShowNewCallDialog}>
+              <DialogTrigger asChild>
+                <Button className="bg-gradient-to-r from-blue-600 to-purple-600">
+                  <Plus className="h-4 w-4 mr-2" />
+                  New Call
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Start New Call</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <Input
+                    placeholder="Enter username to call..."
+                    value={callUsername}
+                    onChange={(e) => setCallUsername(e.target.value)}
+                  />
+                  <div className="grid grid-cols-2 gap-4">
+                    <Button
+                      variant="outline"
+                      className="h-20 bg-transparent"
+                      onClick={() => {
+                        setCallType("voice")
+                        startCall("voice")
                       }}
-                    />
+                    >
+                      <div className="flex flex-col items-center gap-2">
+                        <Phone className="h-6 w-6" />
+                        <span>Voice Call</span>
+                      </div>
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="h-20 bg-transparent"
+                      onClick={() => {
+                        setCallType("video")
+                        startCall("video")
+                      }}
+                    >
+                      <div className="flex flex-col items-center gap-2">
+                        <Video className="h-6 w-6" />
+                        <span>Video Call</span>
+                      </div>
+                    </Button>
                   </div>
-                  <Button onClick={searchForFriends}>
-                    <Search className="h-4 w-4 mr-1" />
-                    Search
-                  </Button>
                 </div>
+              </DialogContent>
+            </Dialog>
+          </div>
+        </CardHeader>
+      </Card>
 
-                {searchError && (
-                  <Alert variant="destructive">
-                    <AlertCircle className="h-4 w-4" />
-                    <AlertDescription>{searchError}</AlertDescription>
-                  </Alert>
-                )}
-
-                {searchSuccess && (
-                  <Alert className="bg-green-50 border-green-200 text-green-800">
-                    <Check className="h-4 w-4" />
-                    <AlertDescription>{searchSuccess}</AlertDescription>
-                  </Alert>
-                )}
-
-                <ScrollArea className="h-[300px]">
-                  <div className="space-y-2">
-                    {searchResults.length === 0 && !searchError ? (
-                      <div className="text-center py-8 text-muted-foreground">
-                        <UserPlus className="h-12 w-12 mx-auto mb-4" />
-                        <p>Search for Fusionary users to send friend requests</p>
-                      </div>
-                    ) : (
-                      searchResults.map((user) => (
-                        <div key={user} className="flex items-center justify-between p-3 hover:bg-muted/50 rounded-md border">
-                          <div className="flex items-center">
-                            <Avatar className="h-10 w-10 mr-3">
-                              <AvatarFallback>{user.substring(0, 2).toUpperCase()}</AvatarFallback>
-                            </Avatar>
-                            <div>
-                              <h4 className="font-medium">{user}</h4>
-                              <p className="text-sm text-muted-foreground">Fusionary user</p>
-                            </div>
+      <Card className="bg-white shadow-md">
+        <CardHeader>
+          <CardTitle>Call History</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {callHistory.length === 0 ? (
+            <p className="text-center text-muted-foreground py-8">No call history yet</p>
+          ) : (
+            <div className="space-y-2">
+              {callHistory
+                .filter((call) => call.caller === username || call.recipient === username)
+                .map((call) => {
+                  const isOutgoing = call.caller === username
+                  const otherUser = isOutgoing ? call.recipient : call.caller
+                  return (
+                    <div
+                      key={call.id}
+                      className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        <Avatar>
+                          <AvatarFallback>{otherUser.charAt(0).toUpperCase()}</AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <p className="font-semibold">@{otherUser}</p>
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            {call.type === "video" ? <Video className="h-3 w-3" /> : <Phone className="h-3 w-3" />}
+                            <span>{isOutgoing ? "Outgoing" : "Incoming"}</span>
+                            <span>•</span>
+                            <span>{formatDuration(call.duration)}</span>
                           </div>
-                          <Button
-                            variant="default"
-                            size="sm"
-                            onClick={() => sendFriendRequest(user)}
-                          >
-                            <UserPlus className="h-4 w-4 mr-1" />
-                            Send Request
-                          </Button>
                         </div>
-                      ))
-                    )}
-                  </div>
-                </ScrollArea>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="contacts" className="mt-0">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center">
-                  <Users className="h-5 w-5 mr-2" />
-                  Your Contacts ({following.length})
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-0">
-                <ScrollArea className="h-[400px]">
-                  <div className="p-4">
-                    {filteredFollowing.length === 0 ? (
-                      <div className="text-center py-8">
-                        <Users className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                        <h3 className="text-lg font-medium mb-2">No Contacts Found</h3>
-                        <p className="text-muted-foreground">
-                          {following.length === 0 
-                            ? "Add some friends to start calling them" 
-                            : "No contacts match your search"
-                          }
-                        </p>
                       </div>
-                    ) : (
-                      <div className="space-y-2">
-                        {filteredFollowing.map((contact) => (
-                          <div key={contact} className="flex items-center justify-between p-3 hover:bg-muted/50 rounded-md">
-                            <div className="flex items-center">
-                              <Avatar className="h-10 w-10 mr-3">
-                                <AvatarFallback>{contact.substring(0, 2).toUpperCase()}</AvatarFallback>
-                              </Avatar>
-                              <div>
-                                <h4 className="font-medium">{contact}</h4>
-                                <p className="text-sm text-muted-foreground">
-                                  {onlineUsers.includes(contact) ? (
-                                    <span className="flex items-center">
-                                      <div className="w-2 h-2 bg-green-500 rounded-full mr-1"></div>
-                                      Online
-                                    </span>
-                                  ) : (
-                                    "Offline"
-                                  )}
-                                </p>
-                              </div>
-                            </div>
-                            <div className="flex gap-2">
-                              <Button
-                                variant="outline"
-                                size="icon"
-                                onClick={() => startCall(contact, "voice")}
-                              >
-                                <Phone className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="icon"
-                                onClick={() => startCall(contact, "video")}
-                              >
-                                <Video className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </ScrollArea>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="online" className="mt-0">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center">
-                  <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
-                  Online Now ({onlineUsers.length})
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-0">
-                <ScrollArea className="h-[400px]">
-                  <div className="p-4">
-                    {onlineUsers.length === 0 ? (
-                      <div className="text-center py-8">
-                        <Phone className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                        <h3 className="text-lg font-medium mb-2">No One Online</h3>
-                        <p className="text-muted-foreground">None of your contacts are currently online</p>
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        {onlineUsers.map((user) => (
-                          <div key={user} className="flex items-center justify-between p-3 hover:bg-muted/50 rounded-md">
-                            <div className="flex items-center">
-                              <Avatar className="h-10 w-10 mr-3 relative">
-                                <AvatarFallback>{user.substring(0, 2).toUpperCase()}</AvatarFallback>
-                                <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 border-2 border-background rounded-full"></div>
-                              </Avatar>
-                              <div>
-                                <h4 className="font-medium">{user}</h4>
-                                <p className="text-sm text-green-600">Available for calls</p>
-                              </div>
-                            </div>
-                            <div className="flex gap-2">
-                              <Button
-                                variant="default"
-                                size="sm"
-                                onClick={() => startCall(user, "voice")}
-                              >
-                                <Phone className="h-4 w-4 mr-1" />
-                                Call
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => startCall(user, "video")}
-                              >
-                                <Video className="h-4 w-4 mr-1" />
-                                Video
-                              </Button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </ScrollArea>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="history" className="mt-0">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center">
-                  <Clock className="h-5 w-5 mr-2" />
-                  Call History
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-0">
-                <ScrollArea className="h-[400px]">
-                  <div className="p-4">
-                    {filteredHistory.length === 0 ? (
-                      <div className="text-center py-8">
-                        <Clock className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                        <h3 className="text-lg font-medium mb-2">No Call History</h3>
-                        <p className="text-muted-foreground">
-                          {callHistory.length === 0 
-                            ? "Your call history will appear here" 
-                            : "No calls match your search"
-                          }
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        {filteredHistory.map((call) => {
-                          const otherUser = call.callerId === username ? call.recipientId : call.callerId
-                          const isOutgoing = call.callerId === username
-                          const duration = call.endTime ? Math.floor((call.endTime - call.startTime) / 1000 / 60) : 0
-
-                          return (
-                            <div key={call.id} className="flex items-center justify-between p-3 hover:bg-muted/50 rounded-md">
-                              <div className="flex items-center">
-                                <Avatar className="h-10 w-10 mr-3">
-                                  <AvatarFallback>{otherUser.substring(0, 2).toUpperCase()}</AvatarFallback>
-                                </Avatar>
-                                <div>
-                                  <h4 className="font-medium flex items-center">
-                                    {otherUser}
-                                    {call.type === "video" ? (
-                                      <VideoIcon className="h-3 w-3 ml-2 text-muted-foreground" />
-                                    ) : (
-                                      <PhoneCall className="h-3 w-3 ml-2 text-muted-foreground" />
-                                    )}
-                                  </h4>
-                                  <p className="text-sm text-muted-foreground">
-                                    {isOutgoing ? "Outgoing" : "Incoming"} • {duration}m • {formatDate(call.startTime)}
-                                  </p>
-                                </div>
-                              </div>
-                              <div className="flex gap-2">
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => startCall(otherUser, call.type)}
-                                >
-                                  {call.type === "video" ? (
-                                    <Video className="h-4 w-4" />
-                                  ) : (
-                                    <Phone className="h-4 w-4" />
-                                  )}
-                                </Button>
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )}
-                  </div>
-                </ScrollArea>
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
-      </div>
-
-      {/* Active Call Interface */}
-      {activeCall && (
-        <CallInterface
-          recipientUsername={activeCall.recipient}
-          callType={activeCall.type}
-          onEndCall={endCall}
-        />
-      )}
-    </>
+                      <span className="text-xs text-muted-foreground">{formatTimestamp(call.timestamp)}</span>
+                    </div>
+                  )
+                })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   )
 }

@@ -1,468 +1,369 @@
 "use client"
 
-import { useState } from "react"
-import { useUser } from "@/context/user-context"
+import type React from "react"
+
+import { useState, useEffect, useRef } from "react"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Label } from "@/components/ui/label"
-import { Slider } from "@/components/ui/slider"
-import { Switch } from "@/components/ui/switch"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Textarea } from "@/components/ui/textarea"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Separator } from "@/components/ui/separator"
-import { Alert, AlertDescription } from "@/components/ui/alert"
-import { User, ImageIcon, Sliders, Palette, MessageSquare, AlertCircle, Check } from 'lucide-react'
-import PhotoUploadField from "@/components/photo/photo-upload-field"
-import MessageList from "@/components/messaging/message-list"
-import { persistentStorage } from "@/lib/persistent-storage"
+import { Camera, Save, AlertCircle } from "lucide-react"
+import { Label } from "@/components/ui/label"
+import { Progress } from "@/components/ui/progress"
 
 interface ProfileTabProps {
-  backgroundImage: string | null
-  backgroundBlur: number
-  backgroundOpacity: number
-  backgroundBrightness: number
-  backgroundParallax: boolean
-  backgroundFilter: string | null
-  backgroundColor: string | null
-  onBackgroundImageChange: (url: string | null) => void
-  onBackgroundBlurChange: (blur: number) => void
-  onBackgroundOpacityChange: (opacity: number) => void
-  onBackgroundBrightnessChange: (brightness: number) => void
-  onBackgroundParallaxChange: (parallax: boolean) => void
-  onBackgroundFilterChange: (filter: string | null) => void
-  onBackgroundColorChange: (color: string | null) => void
+  username: string
 }
 
-export default function ProfileTab({
-  backgroundImage,
-  backgroundBlur,
-  backgroundOpacity,
-  backgroundBrightness,
-  backgroundParallax,
-  backgroundFilter,
-  backgroundColor,
-  onBackgroundImageChange,
-  onBackgroundBlurChange,
-  onBackgroundOpacityChange,
-  onBackgroundBrightnessChange,
-  onBackgroundParallaxChange,
-  onBackgroundFilterChange,
-  onBackgroundColorChange,
-}: ProfileTabProps) {
-  const { username, setUsername, profilePhoto, setProfilePhoto } = useUser()
-  const [usernameInput, setUsernameInput] = useState(username)
-  const [profilePhotoInput, setProfilePhotoInput] = useState(profilePhoto || "")
-  const [backgroundImageInput, setBackgroundImageInput] = useState(backgroundImage || "")
-  const [backgroundColorInput, setBackgroundColorInput] = useState(backgroundColor || "")
-  const [usePhotoUpload, setUsePhotoUpload] = useState(true)
-  const [usernameError, setUsernameError] = useState("")
-  const [usernameSuccess, setUsernameSuccess] = useState("")
+const profilePhotoCache = new Map<string, string>()
+const backgroundPhotoCache = new Map<string, string>()
 
-  const handleUsernameSubmit = () => {
-    if (!usernameInput.trim()) {
-      setUsernameError("Username cannot be empty")
+export default function ProfileTab({ username }: ProfileTabProps) {
+  const [bio, setBio] = useState("")
+  const [location, setLocation] = useState("")
+  const [website, setWebsite] = useState("")
+  const [profilePhotoId, setProfilePhotoId] = useState("")
+  const [backgroundPhotoId, setBackgroundPhotoId] = useState("")
+  const [backgroundBlur, setBackgroundBlur] = useState(0)
+  const [backgroundOpacity, setBackgroundOpacity] = useState(100)
+  const [backgroundBrightness, setBackgroundBrightness] = useState(100)
+  const [uploadingProfile, setUploadingProfile] = useState(false)
+  const [uploadingBackground, setUploadingBackground] = useState(false)
+  const [profileProgress, setProfileProgress] = useState(0)
+  const [backgroundProgress, setBackgroundProgress] = useState(0)
+  const profileInputRef = useRef<HTMLInputElement>(null)
+  const backgroundInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (username) {
+      loadProfile()
+    }
+  }, [username])
+
+  const loadProfile = () => {
+    const profileKey = `profile_${username}`
+    const stored = localStorage.getItem(profileKey)
+    if (stored) {
+      try {
+        const profile = JSON.parse(stored)
+        setBio(profile.bio || "")
+        setLocation(profile.location || "")
+        setWebsite(profile.website || "")
+        setProfilePhotoId(profile.profilePhotoId || "")
+        setBackgroundPhotoId(profile.backgroundPhotoId || "")
+        setBackgroundBlur(profile.backgroundBlur || 0)
+        setBackgroundOpacity(profile.backgroundOpacity || 100)
+        setBackgroundBrightness(profile.backgroundBrightness || 100)
+      } catch (error) {
+        console.error("Error loading profile:", error)
+      }
+    }
+  }
+
+  const saveProfile = () => {
+    if (!username) return
+
+    const profileKey = `profile_${username}`
+    const profile = {
+      username,
+      bio,
+      location,
+      website,
+      profilePhotoId, // Store ID instead of data
+      backgroundPhotoId, // Store ID instead of data
+      backgroundBlur,
+      backgroundOpacity,
+      backgroundBrightness,
+    }
+    try {
+      localStorage.setItem(profileKey, JSON.stringify(profile))
+      alert("Profile saved successfully!")
+    } catch (error) {
+      console.error("Error saving profile:", error)
+      alert("Unable to save profile. Storage limit reached.")
+    }
+  }
+
+  const handleProfilePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    if (!file.type.startsWith("image/")) {
+      alert("Please select an image file")
       return
     }
 
-    const trimmedUsername = usernameInput.trim()
-
-    // Check if username is already taken (but allow current user to keep their username)
-    if (trimmedUsername !== username && !persistentStorage.isUsernameAvailable(trimmedUsername)) {
-      setUsernameError("This Fusionary name is already taken. Please choose a different one.")
+    const maxSize = 5 * 1024 * 1024
+    if (file.size > maxSize) {
+      alert("File is too large (max 5MB)")
       return
     }
 
-    // Save the new username
-    setUsername(trimmedUsername)
-    persistentStorage.saveUsername(trimmedUsername)
-    setUsernameError("")
-    setUsernameSuccess("Fusionary name updated successfully!")
+    setUploadingProfile(true)
+    setProfileProgress(0)
 
-    // Clear success message after 3 seconds
+    const objectUrl = URL.createObjectURL(file)
+    const photoId = `profile_${username}_${Date.now()}`
+    profilePhotoCache.set(photoId, objectUrl)
+    setProfilePhotoId(photoId)
+    setProfileProgress(100)
     setTimeout(() => {
-      setUsernameSuccess("")
-    }, 3000)
+      setUploadingProfile(false)
+      setProfileProgress(0)
+    }, 500)
   }
 
-  const handleProfilePhotoSubmit = () => {
-    if (profilePhotoInput.trim()) {
-      setProfilePhoto(profilePhotoInput.trim())
-    } else {
-      setProfilePhoto(null)
+  const handleBackgroundPhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    if (!file.type.startsWith("image/")) {
+      alert("Please select an image file")
+      return
     }
-  }
 
-  const handleProfilePhotoUploaded = (url: string) => {
-    if (url) {
-      setProfilePhoto(url)
+    const maxSize = 5 * 1024 * 1024
+    if (file.size > maxSize) {
+      alert("File is too large (max 5MB)")
+      return
     }
+
+    setUploadingBackground(true)
+    setBackgroundProgress(0)
+
+    const objectUrl = URL.createObjectURL(file)
+    const photoId = `background_${username}_${Date.now()}`
+    backgroundPhotoCache.set(photoId, objectUrl)
+    setBackgroundPhotoId(photoId)
+    setBackgroundProgress(100)
+    setTimeout(() => {
+      setUploadingBackground(false)
+      setBackgroundProgress(0)
+    }, 500)
   }
 
-  const handleBackgroundImageSubmit = () => {
-    if (backgroundImageInput.trim()) {
-      onBackgroundImageChange(backgroundImageInput.trim())
-      localStorage.setItem("backgroundImage", backgroundImageInput.trim())
-    } else {
-      onBackgroundImageChange(null)
-      localStorage.removeItem("backgroundImage")
-    }
+  const getProfilePhoto = () => profilePhotoCache.get(profilePhotoId)
+  const getBackgroundPhoto = () => backgroundPhotoCache.get(backgroundPhotoId)
+
+  if (!username) {
+    return (
+      <Card className="bg-white shadow-md">
+        <CardContent className="py-12 text-center">
+          <AlertCircle className="h-16 w-16 mx-auto mb-4 text-gray-400" />
+          <h3 className="text-lg font-medium mb-2">Sign In Required</h3>
+          <p className="text-muted-foreground">Please sign in to view and edit your profile</p>
+        </CardContent>
+      </Card>
+    )
   }
 
-  const handleBackgroundPhotoUploaded = (url: string) => {
-    if (url) {
-      onBackgroundImageChange(url)
-      localStorage.setItem("backgroundImage", url)
-      setBackgroundImageInput(url)
-    }
-  }
-
-  const handleBackgroundColorSubmit = () => {
-    if (backgroundColorInput.trim()) {
-      onBackgroundColorChange(backgroundColorInput.trim())
-      localStorage.setItem("backgroundColor", backgroundColorInput.trim())
-    } else {
-      onBackgroundColorChange(null)
-      localStorage.removeItem("backgroundColor")
-    }
-  }
-
-  const handleBackgroundBlurChange = (value: number[]) => {
-    const blur = value[0]
-    onBackgroundBlurChange(blur)
-    localStorage.setItem("backgroundBlur", blur.toString())
-  }
-
-  const handleBackgroundOpacityChange = (value: number[]) => {
-    const opacity = value[0]
-    onBackgroundOpacityChange(opacity)
-    localStorage.setItem("backgroundOpacity", opacity.toString())
-  }
-
-  const handleBackgroundBrightnessChange = (value: number[]) => {
-    const brightness = value[0]
-    onBackgroundBrightnessChange(brightness)
-    localStorage.setItem("backgroundBrightness", brightness.toString())
-  }
-
-  const handleBackgroundParallaxChange = (checked: boolean) => {
-    onBackgroundParallaxChange(checked)
-    localStorage.setItem("backgroundParallax", checked.toString())
-  }
-
-  const handleBackgroundFilterChange = (value: string) => {
-    const filter = value === "none" ? null : value
-    onBackgroundFilterChange(filter)
-    if (filter) {
-      localStorage.setItem("backgroundFilter", filter)
-    } else {
-      localStorage.removeItem("backgroundFilter")
-    }
-  }
+  const profilePhoto = getProfilePhoto()
+  const backgroundPhoto = getBackgroundPhoto()
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Profile</CardTitle>
-      </CardHeader>
-      <CardContent className="p-0">
-        <Tabs defaultValue="account">
-          <TabsList className="grid grid-cols-4 w-full">
-            <TabsTrigger value="account">
-              <User className="h-4 w-4 mr-2" />
-              Account
-            </TabsTrigger>
-            <TabsTrigger value="messages">
-              <MessageSquare className="h-4 w-4 mr-2" />
-              Messages
-            </TabsTrigger>
-            <TabsTrigger value="appearance">
-              <ImageIcon className="h-4 w-4 mr-2" />
-              Background
-            </TabsTrigger>
-            <TabsTrigger value="settings">
-              <Sliders className="h-4 w-4 mr-2" />
-              Settings
-            </TabsTrigger>
-          </TabsList>
+    <div className="space-y-4">
+      <Card className="bg-white shadow-md">
+        <div
+          className="h-32 relative overflow-hidden"
+          style={{
+            backgroundImage: backgroundPhoto ? `url(${backgroundPhoto})` : "none",
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+            backgroundColor: backgroundPhoto ? "transparent" : "#3b82f6",
+            filter: `blur(${backgroundBlur}px) brightness(${backgroundBrightness}%)`,
+            opacity: backgroundOpacity / 100,
+          }}
+        >
+          {!backgroundPhoto && <div className="absolute inset-0 bg-gradient-to-r from-blue-600 to-purple-600" />}
+          <div className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 hover:opacity-100 transition-opacity">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => backgroundInputRef.current?.click()}
+              disabled={uploadingBackground}
+            >
+              <Camera className="h-4 w-4 mr-1" />
+              {uploadingBackground ? "Uploading..." : "Change Cover"}
+            </Button>
+          </div>
+          <input
+            ref={backgroundInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handleBackgroundPhotoChange}
+            className="hidden"
+          />
+        </div>
 
-          <TabsContent value="account" className="p-4 space-y-6">
-            <div className="flex flex-col items-center mb-6">
-              <Avatar className="h-24 w-24 mb-3">
-                <AvatarImage src={profilePhoto || undefined} />
-                <AvatarFallback className="text-lg">
-                  {username ? username.substring(0, 2).toUpperCase() : "U"}
-                </AvatarFallback>
+        <CardContent className="pt-0">
+          <div className="flex flex-col md:flex-row gap-4 -mt-16">
+            <div className="relative">
+              <Avatar className="h-32 w-32 border-4 border-white shadow-lg cursor-pointer">
+                {profilePhoto ? (
+                  <AvatarImage src={profilePhoto || "/placeholder.svg"} alt={username} />
+                ) : (
+                  <AvatarFallback className="text-4xl bg-gradient-to-r from-blue-500 to-purple-600 text-white">
+                    {username.charAt(0).toUpperCase()}
+                  </AvatarFallback>
+                )}
               </Avatar>
-              <h3 className="font-medium text-lg">{username || "Guest User"}</h3>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="username">Fusionary Name</Label>
-              <div className="flex gap-2">
-                <Input
-                  id="username"
-                  value={usernameInput}
-                  onChange={(e) => {
-                    setUsernameInput(e.target.value)
-                    setUsernameError("")
-                    setUsernameSuccess("")
-                  }}
-                  placeholder="Enter your unique Fusionary name"
-                />
-                <Button onClick={handleUsernameSubmit}>Save</Button>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Choose a unique name that other Fusionary users can find you by
-              </p>
-
-              {usernameError && (
-                <Alert variant="destructive">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>{usernameError}</AlertDescription>
-                </Alert>
-              )}
-
-              {usernameSuccess && (
-                <Alert className="bg-green-50 border-green-200 text-green-800">
-                  <Check className="h-4 w-4" />
-                  <AlertDescription>{usernameSuccess}</AlertDescription>
-                </Alert>
-              )}
-            </div>
-
-            <Separator />
-
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <Label>Profile Photo</Label>
-                <div className="flex items-center space-x-2">
-                  <Switch id="photo-upload-mode" checked={usePhotoUpload} onCheckedChange={setUsePhotoUpload} />
-                  <Label htmlFor="photo-upload-mode" className="text-sm">
-                    {usePhotoUpload ? "Upload Photo" : "Use URL"}
-                  </Label>
-                </div>
-              </div>
-
-              {usePhotoUpload ? (
-                <div className="space-y-2">
-                  <Label>Upload Profile Photo</Label>
-                  <PhotoUploadField onPhotoUploaded={handleProfilePhotoUploaded} />
-                  <p className="text-xs text-muted-foreground">Upload an image file to use as your profile photo</p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <Label htmlFor="profile-photo">Profile Photo URL</Label>
-                  <div className="flex gap-2">
-                    <Input
-                      id="profile-photo"
-                      value={profilePhotoInput}
-                      onChange={(e) => setProfilePhotoInput(e.target.value)}
-                      placeholder="Enter photo URL"
-                    />
-                    <Button onClick={handleProfilePhotoSubmit}>Save</Button>
-                  </div>
-                  <p className="text-xs text-muted-foreground">Enter a URL to an image to use as your profile photo</p>
-                </div>
-              )}
-
-              {profilePhoto && (
-                <div className="flex items-center justify-between p-2 bg-muted rounded-md">
-                  <span className="text-sm">Current profile photo set</span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setProfilePhoto(null)
-                      setProfilePhotoInput("")
-                    }}
-                  >
-                    Remove
-                  </Button>
-                </div>
-              )}
-            </div>
-          </TabsContent>
-
-          <TabsContent value="messages" className="p-0 h-[500px]">
-            <MessageList />
-          </TabsContent>
-
-          <TabsContent value="appearance" className="p-4 space-y-4">
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <Label>Background Image</Label>
-                <div className="flex items-center space-x-2">
-                  <Switch id="bg-upload-mode" checked={usePhotoUpload} onCheckedChange={setUsePhotoUpload} />
-                  <Label htmlFor="bg-upload-mode" className="text-sm">
-                    {usePhotoUpload ? "Upload Photo" : "Use URL"}
-                  </Label>
-                </div>
-              </div>
-
-              {usePhotoUpload ? (
-                <div className="space-y-2">
-                  <Label>Upload Background Image</Label>
-                  <PhotoUploadField onPhotoUploaded={handleBackgroundPhotoUploaded} />
-                  <p className="text-xs text-muted-foreground">Upload an image file to use as your background</p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <Label htmlFor="background-image">Background Image URL</Label>
-                  <div className="flex gap-2">
-                    <Input
-                      id="background-image"
-                      value={backgroundImageInput}
-                      onChange={(e) => setBackgroundImageInput(e.target.value)}
-                      placeholder="Enter image URL"
-                    />
-                    <Button onClick={handleBackgroundImageSubmit}>Save</Button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <Separator />
-
-            <div className="space-y-2">
-              <Label htmlFor="background-color">Background Color</Label>
-              <div className="flex gap-2">
-                <Input
-                  id="background-color"
-                  value={backgroundColorInput}
-                  onChange={(e) => setBackgroundColorInput(e.target.value)}
-                  placeholder="e.g. #f0f0f0 or rgba(0,0,0,0.5)"
-                />
-                <Button onClick={handleBackgroundColorSubmit}>Save</Button>
-              </div>
-            </div>
-
-            <Separator />
-
-            <div className="space-y-4">
-              <h4 className="font-medium">Background Effects</h4>
-
-              <div className="space-y-2">
-                <div className="flex justify-between items-center">
-                  <Label>Background Blur</Label>
-                  <span className="text-sm">{backgroundBlur}px</span>
-                </div>
-                <Slider value={[backgroundBlur]} min={0} max={20} step={1} onValueChange={handleBackgroundBlurChange} />
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex justify-between items-center">
-                  <Label>Background Opacity</Label>
-                  <span className="text-sm">{backgroundOpacity.toFixed(1)}</span>
-                </div>
-                <Slider
-                  value={[backgroundOpacity]}
-                  min={0.1}
-                  max={1}
-                  step={0.1}
-                  onValueChange={handleBackgroundOpacityChange}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex justify-between items-center">
-                  <Label>Background Brightness</Label>
-                  <span className="text-sm">{backgroundBrightness}%</span>
-                </div>
-                <Slider
-                  value={[backgroundBrightness]}
-                  min={20}
-                  max={200}
-                  step={5}
-                  onValueChange={handleBackgroundBrightnessChange}
-                />
-              </div>
-
-              <div className="flex items-center space-x-2">
-                <Switch id="parallax" checked={backgroundParallax} onCheckedChange={handleBackgroundParallaxChange} />
-                <Label htmlFor="parallax">Enable Parallax Effect</Label>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="background-filter">Background Filter</Label>
-                <Select value={backgroundFilter || "none"} onValueChange={handleBackgroundFilterChange}>
-                  <SelectTrigger id="background-filter">
-                    <SelectValue placeholder="Select filter" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">None</SelectItem>
-                    <SelectItem value="grayscale">Grayscale</SelectItem>
-                    <SelectItem value="sepia">Sepia</SelectItem>
-                    <SelectItem value="invert">Invert</SelectItem>
-                    <SelectItem value="hue-rotate">Hue Rotate</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </TabsContent>
-
-          <TabsContent value="settings" className="p-4 space-y-4">
-            <div className="space-y-2">
-              <Label>Theme</Label>
-              <Select defaultValue="system">
-                <SelectTrigger>
-                  <SelectValue placeholder="Select theme" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="light">Light</SelectItem>
-                  <SelectItem value="dark">Dark</SelectItem>
-                  <SelectItem value="system">System</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <Separator />
-
-            <div className="space-y-2">
-              <Label>Accent Color</Label>
-              <div className="grid grid-cols-6 gap-2">
-                <Button variant="outline" className="w-full h-8 bg-red-500" />
-                <Button variant="outline" className="w-full h-8 bg-orange-500" />
-                <Button variant="outline" className="w-full h-8 bg-green-500" />
-                <Button variant="outline" className="w-full h-8 bg-teal-500" />
-                <Button variant="outline" className="w-full h-8 bg-purple-500" />
-                <Button variant="outline" className="w-full h-8 bg-pink-500" />
-              </div>
-            </div>
-
-            <Separator />
-
-            <div className="space-y-4">
-              <h4 className="font-medium">Preferences</h4>
-
-              <div className="flex items-center space-x-2">
-                <Switch id="notifications" />
-                <Label htmlFor="notifications">Enable Notifications</Label>
-              </div>
-
-              <div className="flex items-center space-x-2">
-                <Switch id="sounds" />
-                <Label htmlFor="sounds">Enable Sounds</Label>
-              </div>
-
-              <div className="flex items-center space-x-2">
-                <Switch id="auto-play" />
-                <Label htmlFor="auto-play">Auto-play Videos</Label>
-              </div>
-            </div>
-
-            <Separator />
-
-            <div className="pt-4">
-              <Button variant="outline" className="w-full bg-transparent">
-                <Palette className="h-4 w-4 mr-2" />
-                Advanced Customization
+              <Button
+                variant="secondary"
+                size="sm"
+                className="absolute bottom-0 right-0 rounded-full h-8 w-8 p-0"
+                onClick={() => profileInputRef.current?.click()}
+                disabled={uploadingProfile}
+              >
+                <Camera className="h-4 w-4" />
               </Button>
+              <input
+                ref={profileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleProfilePhotoChange}
+                className="hidden"
+              />
             </div>
-          </TabsContent>
-        </Tabs>
-      </CardContent>
-    </Card>
+
+            <div className="flex-1 mt-4 md:mt-16">
+              <div className="flex items-start justify-between">
+                <div>
+                  <h2 className="text-2xl font-bold">@{username}</h2>
+                  {bio && <p className="text-muted-foreground mt-1">{bio}</p>}
+                  <div className="flex gap-4 mt-2 text-sm">
+                    {location && <span className="text-muted-foreground">📍 {location}</span>}
+                    {website && (
+                      <a
+                        href={website}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:underline"
+                      >
+                        🔗 {website}
+                      </a>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {(uploadingProfile || uploadingBackground) && (
+            <div className="mt-4 space-y-2">
+              {uploadingProfile && (
+                <div>
+                  <p className="text-sm text-muted-foreground mb-1">Uploading profile photo...</p>
+                  <Progress value={profileProgress} className="h-2" />
+                </div>
+              )}
+              {uploadingBackground && (
+                <div>
+                  <p className="text-sm text-muted-foreground mb-1">Uploading background photo...</p>
+                  <Progress value={backgroundProgress} className="h-2" />
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="bg-white shadow-md">
+        <CardHeader>
+          <CardTitle>Edit Profile</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="bio">Bio</Label>
+            <Textarea
+              id="bio"
+              placeholder="Tell us about yourself..."
+              value={bio}
+              onChange={(e) => setBio(e.target.value)}
+              rows={3}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="location">Location</Label>
+            <Input
+              id="location"
+              placeholder="Where are you from?"
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="website">Website</Label>
+            <Input
+              id="website"
+              placeholder="https://yourwebsite.com"
+              value={website}
+              onChange={(e) => setWebsite(e.target.value)}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="bg-white shadow-md">
+        <CardHeader>
+          <CardTitle>Background Customization</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {backgroundPhoto && (
+            <div className="relative w-full h-32 bg-muted rounded-md overflow-hidden">
+              <img
+                src={backgroundPhoto || "/placeholder.svg"}
+                alt="Background preview"
+                className="w-full h-full object-cover"
+              />
+            </div>
+          )}
+
+          <div className="space-y-3">
+            <div>
+              <Label htmlFor="blur">Blur: {backgroundBlur}px</Label>
+              <input
+                id="blur"
+                type="range"
+                min="0"
+                max="20"
+                value={backgroundBlur}
+                onChange={(e) => setBackgroundBlur(Number(e.target.value))}
+                className="w-full"
+              />
+            </div>
+            <div>
+              <Label htmlFor="opacity">Opacity: {backgroundOpacity}%</Label>
+              <input
+                id="opacity"
+                type="range"
+                min="0"
+                max="100"
+                value={backgroundOpacity}
+                onChange={(e) => setBackgroundOpacity(Number(e.target.value))}
+                className="w-full"
+              />
+            </div>
+            <div>
+              <Label htmlFor="brightness">Brightness: {backgroundBrightness}%</Label>
+              <input
+                id="brightness"
+                type="range"
+                min="50"
+                max="150"
+                value={backgroundBrightness}
+                onChange={(e) => setBackgroundBrightness(Number(e.target.value))}
+                className="w-full"
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Button onClick={saveProfile} className="w-full" size="lg">
+        <Save className="h-4 w-4 mr-2" />
+        Save All Changes
+      </Button>
+    </div>
   )
 }
