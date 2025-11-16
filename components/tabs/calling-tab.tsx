@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { Phone, Video, Mic, MicOff, VideoIcon, VideoOff, PhoneOff, Plus } from "lucide-react"
+import { Phone, Video, Mic, MicOff, VideoIcon, VideoOff, PhoneOff, Plus } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 
 interface CallHistory {
@@ -36,7 +36,7 @@ export default function CallingTab({ username }: CallingTabProps) {
 
   useEffect(() => {
     loadCallHistory()
-  }, [])
+  }, [username])
 
   useEffect(() => {
     let interval: NodeJS.Timeout
@@ -48,19 +48,21 @@ export default function CallingTab({ username }: CallingTabProps) {
     return () => clearInterval(interval)
   }, [activeCall])
 
-  const loadCallHistory = () => {
+  const loadCallHistory = async () => {
+    if (!username) return
+
     try {
-      const stored = localStorage.getItem("fusconn-call-history")
-      if (stored) {
-        setCallHistory(JSON.parse(stored))
+      const response = await fetch(`/api/calls?username=${username}`)
+      const data = await response.json()
+      if (data.calls) {
+        setCallHistory(data.calls)
       }
     } catch (error) {
       console.error("Error loading call history:", error)
     }
   }
 
-  const saveCallHistory = (updatedHistory: CallHistory[]) => {
-    localStorage.setItem("fusconn-call-history", JSON.stringify(updatedHistory))
+  const saveCallHistory = async (updatedHistory: CallHistory[]) => {
     setCallHistory(updatedHistory)
   }
 
@@ -113,20 +115,30 @@ export default function CallingTab({ username }: CallingTabProps) {
     }
   }
 
-  const endCall = () => {
+  const endCall = async () => {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop())
       streamRef.current = null
     }
 
     if (activeCall) {
-      const completedCall = {
-        ...activeCall,
-        duration: callDuration,
-      }
+      try {
+        await fetch("/api/calls", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            caller: activeCall.caller,
+            recipient: activeCall.recipient,
+            type: activeCall.type,
+            duration: callDuration,
+            status: "completed",
+          }),
+        })
 
-      const updatedHistory = [completedCall, ...callHistory]
-      saveCallHistory(updatedHistory)
+        await loadCallHistory()
+      } catch (error) {
+        console.error("Error saving call:", error)
+      }
     }
 
     setActiveCall(null)

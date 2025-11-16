@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { MessageCircle, Send, Plus, ArrowLeft } from "lucide-react"
+import { MessageCircle, Send, Plus, ArrowLeft } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 
 interface Message {
@@ -37,7 +37,9 @@ export default function ChatsTab({ username }: ChatsTabProps) {
 
   useEffect(() => {
     loadChats()
-  }, [])
+    const interval = setInterval(loadChats, 5000)
+    return () => clearInterval(interval)
+  }, [username])
 
   useEffect(() => {
     scrollToBottom()
@@ -47,23 +49,25 @@ export default function ChatsTab({ username }: ChatsTabProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }
 
-  const loadChats = () => {
+  const loadChats = async () => {
+    if (!username) return
+
     try {
-      const stored = localStorage.getItem("fusconn-global-chats")
-      if (stored) {
-        setChats(JSON.parse(stored))
+      const response = await fetch(`/api/chats/global?username=${username}`)
+      const data = await response.json()
+      if (data.chats) {
+        setChats(data.chats)
       }
     } catch (error) {
       console.error("Error loading chats:", error)
     }
   }
 
-  const saveChats = (updatedChats: Chat[]) => {
-    localStorage.setItem("fusconn-global-chats", JSON.stringify(updatedChats))
+  const saveChats = async (updatedChats: Chat[]) => {
     setChats(updatedChats)
   }
 
-  const handleCreateChat = () => {
+  const handleCreateChat = async () => {
     if (!username) {
       alert("Please sign in to start a chat")
       return
@@ -79,31 +83,31 @@ export default function ChatsTab({ username }: ChatsTabProps) {
       return
     }
 
-    const existingChat = chats.find(
-      (chat) => chat.participants.includes(username) && chat.participants.includes(newChatUsername),
-    )
+    try {
+      const response = await fetch("/api/chats/global", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          participants: [username, newChatUsername],
+          username,
+        }),
+      })
 
-    if (existingChat) {
-      setSelectedChat(existingChat)
-      setShowNewChatDialog(false)
-      setNewChatUsername("")
-      return
+      const data = await response.json()
+
+      if (data.chat) {
+        setSelectedChat(data.chat)
+        await loadChats()
+        setShowNewChatDialog(false)
+        setNewChatUsername("")
+      }
+    } catch (error) {
+      console.error("Error creating chat:", error)
+      alert("Failed to create chat")
     }
-
-    const newChat: Chat = {
-      id: `chat-${Date.now()}`,
-      participants: [username, newChatUsername],
-      messages: [],
-    }
-
-    const updatedChats = [newChat, ...chats]
-    saveChats(updatedChats)
-    setSelectedChat(newChat)
-    setShowNewChatDialog(false)
-    setNewChatUsername("")
   }
 
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (!username || !selectedChat) {
       alert("Please sign in to send messages")
       return
@@ -111,30 +115,27 @@ export default function ChatsTab({ username }: ChatsTabProps) {
 
     if (!messageText.trim()) return
 
-    const newMessage: Message = {
-      id: `message-${Date.now()}`,
-      senderId: username,
-      content: messageText.trim(),
-      timestamp: Date.now(),
-    }
+    try {
+      const response = await fetch(`/api/chats/global/${selectedChat.id}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          senderId: username,
+          content: messageText.trim(),
+        }),
+      })
 
-    const updatedChats = chats.map((chat) => {
-      if (chat.id === selectedChat.id) {
-        return {
-          ...chat,
-          messages: [...chat.messages, newMessage],
-          lastMessage: messageText.trim(),
-          lastMessageTime: Date.now(),
-        }
+      const data = await response.json()
+
+      if (data.chat) {
+        setMessageText("")
+        setSelectedChat(data.chat)
+        await loadChats()
       }
-      return chat
-    })
-
-    saveChats(updatedChats)
-    setMessageText("")
-
-    const updated = updatedChats.find((c) => c.id === selectedChat.id)
-    if (updated) setSelectedChat(updated)
+    } catch (error) {
+      console.error("Error sending message:", error)
+      alert("Failed to send message")
+    }
   }
 
   const formatTimestamp = (timestamp: number) => {

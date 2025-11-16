@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { ShoppingBag, Search, Plus, DollarSign, Package, Tag, MapPin, AlertCircle } from "lucide-react"
+import { ShoppingBag, Search, Plus, DollarSign, Package, Tag, MapPin, AlertCircle } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -46,25 +46,27 @@ export default function MarketplaceTab({ username }: MarketplaceTabProps) {
 
   useEffect(() => {
     loadListings()
+    const interval = setInterval(loadListings, 10000)
+    return () => clearInterval(interval)
   }, [])
 
-  const loadListings = () => {
+  const loadListings = async () => {
     try {
-      const stored = localStorage.getItem("fusconn-global-marketplace")
-      if (stored) {
-        setListings(JSON.parse(stored))
+      const response = await fetch("/api/marketplace")
+      const data = await response.json()
+      if (data.listings) {
+        setListings(data.listings)
       }
     } catch (error) {
       console.error("Error loading listings:", error)
     }
   }
 
-  const saveListings = (updatedListings: MarketplaceListing[]) => {
-    localStorage.setItem("fusconn-global-marketplace", JSON.stringify(updatedListings))
+  const saveListings = async (updatedListings: MarketplaceListing[]) => {
     setListings(updatedListings)
   }
 
-  const handleCreateListing = () => {
+  const handleCreateListing = async () => {
     if (!username) {
       alert("Please sign in to create listings")
       return
@@ -75,30 +77,38 @@ export default function MarketplaceTab({ username }: MarketplaceTabProps) {
       return
     }
 
-    const newListing: MarketplaceListing = {
-      id: `listing-${Date.now()}`,
-      title: newTitle.trim(),
-      description: newDescription.trim(),
-      price: Number.parseFloat(newPrice),
-      category: newCategory,
-      location: newLocation.trim(),
-      imageUrl: "",
-      sellerUsername: username,
-      timestamp: Date.now(),
-      contactEmail: null,
-      contactPhone: null,
-      status: "active",
+    try {
+      const response = await fetch("/api/marketplace", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: newTitle.trim(),
+          description: newDescription.trim(),
+          price: newPrice,
+          category: newCategory,
+          location: newLocation.trim(),
+          imageUrl: "",
+          sellerUsername: username,
+          contactEmail: null,
+          contactPhone: null,
+        }),
+      })
+
+      const data = await response.json()
+
+      if (data.listing) {
+        await loadListings()
+        setNewTitle("")
+        setNewDescription("")
+        setNewPrice("")
+        setNewCategory("")
+        setNewLocation("")
+        setShowCreateDialog(false)
+      }
+    } catch (error) {
+      console.error("Error creating listing:", error)
+      alert("Failed to create listing")
     }
-
-    const updatedListings = [newListing, ...listings]
-    saveListings(updatedListings)
-
-    setNewTitle("")
-    setNewDescription("")
-    setNewPrice("")
-    setNewCategory("")
-    setNewLocation("")
-    setShowCreateDialog(false)
   }
 
   const filteredListings = listings.filter((listing) => {

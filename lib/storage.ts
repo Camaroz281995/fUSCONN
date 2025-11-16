@@ -63,6 +63,7 @@ export const storage = {
     get: (username: string) => users.get(username),
     set: (username: string, user: User) => users.set(username, user),
     getAll: () => Array.from(users.values()),
+    delete: (username: string) => users.delete(username),
   },
 
   // Post operations
@@ -79,6 +80,7 @@ export const storage = {
     set: (id: string, community: Community) => communities.set(id, community),
     getAll: () => Array.from(communities.values()).sort((a, b) => b.createdAt - a.createdAt),
     getByUser: (username: string) => Array.from(communities.values()).filter((c) => c.members.includes(username)),
+    delete: (id: string) => communities.delete(id),
   },
 
   // Community post operations

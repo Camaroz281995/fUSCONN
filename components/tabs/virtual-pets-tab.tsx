@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Progress } from "@/components/ui/progress"
-import { PawPrint, Heart, Sparkles, Apple, Gamepad2 } from "lucide-react"
+import { PawPrint, Heart, Sparkles, Apple, Gamepad2 } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 
 interface Pet {
@@ -35,44 +35,29 @@ export default function VirtualPetsTab({ username }: VirtualPetsTabProps) {
 
   useEffect(() => {
     loadPets()
-    const interval = setInterval(updatePetStats, 60000)
+    const interval = setInterval(loadPets, 60000)
     return () => clearInterval(interval)
-  }, [])
+  }, [username])
 
-  const loadPets = () => {
+  const loadPets = async () => {
+    if (!username) return
+
     try {
-      const stored = localStorage.getItem("fusconn-pets")
-      if (stored) {
-        setPets(JSON.parse(stored))
+      const response = await fetch(`/api/pets?owner=${username}`)
+      const data = await response.json()
+      if (data.pets) {
+        setPets(data.pets)
       }
     } catch (error) {
       console.error("Error loading pets:", error)
     }
   }
 
-  const savePets = (updatedPets: Pet[]) => {
-    localStorage.setItem("fusconn-pets", JSON.stringify(updatedPets))
+  const savePets = async (updatedPets: Pet[]) => {
     setPets(updatedPets)
   }
 
-  const updatePetStats = () => {
-    const updatedPets = pets.map((pet) => {
-      const now = Date.now()
-      const hoursSinceLastFed = (now - pet.lastFed) / 3600000
-      const hoursSinceLastPlayed = (now - pet.lastPlayed) / 3600000
-
-      return {
-        ...pet,
-        hunger: Math.max(0, pet.hunger - hoursSinceLastFed * 2),
-        happiness: Math.max(0, pet.happiness - hoursSinceLastPlayed * 3),
-        energy: Math.min(100, pet.energy + hoursSinceLastPlayed),
-      }
-    })
-
-    savePets(updatedPets)
-  }
-
-  const adoptPet = () => {
+  const adoptPet = async () => {
     if (!username) {
       alert("Please sign in to adopt a pet")
       return
@@ -83,104 +68,111 @@ export default function VirtualPetsTab({ username }: VirtualPetsTabProps) {
       return
     }
 
-    const newPet: Pet = {
-      id: `pet-${Date.now()}`,
-      name: newPetName.trim(),
-      type: newPetType,
-      owner: username,
-      hunger: 100,
-      happiness: 100,
-      energy: 100,
-      level: 1,
-      experience: 0,
-      lastFed: Date.now(),
-      lastPlayed: Date.now(),
-      createdAt: Date.now(),
-    }
+    try {
+      const response = await fetch("/api/pets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: newPetName.trim(),
+          type: newPetType,
+          owner: username,
+        }),
+      })
 
-    const updatedPets = [...pets, newPet]
-    savePets(updatedPets)
-    setNewPetName("")
-    setShowAdoptDialog(false)
+      const data = await response.json()
+
+      if (data.pet) {
+        await loadPets()
+        setNewPetName("")
+        setShowAdoptDialog(false)
+      }
+    } catch (error) {
+      console.error("Error adopting pet:", error)
+      alert("Failed to adopt pet")
+    }
   }
 
-  const feedPet = (petId: string) => {
+  const feedPet = async (petId: string) => {
     if (!username) {
       alert("Please sign in to interact with pets")
       return
     }
 
-    const updatedPets = pets.map((pet) => {
-      if (pet.id === petId && pet.owner === username) {
-        const newHunger = Math.min(100, pet.hunger + 30)
-        const newExp = pet.experience + 10
-        const newLevel = Math.floor(newExp / 100) + 1
+    try {
+      const response = await fetch("/api/pets", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          petId,
+          owner: username,
+          action: "feed",
+        }),
+      })
 
-        return {
-          ...pet,
-          hunger: newHunger,
-          experience: newExp,
-          level: newLevel,
-          lastFed: Date.now(),
-        }
+      const data = await response.json()
+
+      if (data.pet) {
+        await loadPets()
       }
-      return pet
-    })
-
-    savePets(updatedPets)
+    } catch (error) {
+      console.error("Error feeding pet:", error)
+    }
   }
 
-  const playWithPet = (petId: string) => {
+  const playWithPet = async (petId: string) => {
     if (!username) {
       alert("Please sign in to interact with pets")
       return
     }
 
-    const updatedPets = pets.map((pet) => {
-      if (pet.id === petId && pet.owner === username && pet.energy >= 20) {
-        const newHappiness = Math.min(100, pet.happiness + 25)
-        const newEnergy = Math.max(0, pet.energy - 20)
-        const newExp = pet.experience + 15
-        const newLevel = Math.floor(newExp / 100) + 1
+    try {
+      const response = await fetch("/api/pets", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          petId,
+          owner: username,
+          action: "play",
+        }),
+      })
 
-        return {
-          ...pet,
-          happiness: newHappiness,
-          energy: newEnergy,
-          experience: newExp,
-          level: newLevel,
-          lastPlayed: Date.now(),
-        }
+      const data = await response.json()
+
+      if (data.pet) {
+        await loadPets()
+      } else if (data.error) {
+        alert(data.error)
       }
-      return pet
-    })
-
-    savePets(updatedPets)
+    } catch (error) {
+      console.error("Error playing with pet:", error)
+    }
   }
 
-  const petPet = (petId: string) => {
+  const petPet = async (petId: string) => {
     if (!username) {
       alert("Please sign in to interact with pets")
       return
     }
 
-    const updatedPets = pets.map((pet) => {
-      if (pet.id === petId && pet.owner === username) {
-        const newHappiness = Math.min(100, pet.happiness + 10)
-        const newExp = pet.experience + 5
-        const newLevel = Math.floor(newExp / 100) + 1
+    try {
+      const response = await fetch("/api/pets", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          petId,
+          owner: username,
+          action: "pet",
+        }),
+      })
 
-        return {
-          ...pet,
-          happiness: newHappiness,
-          experience: newExp,
-          level: newLevel,
-        }
+      const data = await response.json()
+
+      if (data.pet) {
+        await loadPets()
       }
-      return pet
-    })
-
-    savePets(updatedPets)
+    } catch (error) {
+      console.error("Error petting pet:", error)
+    }
   }
 
   const getPetEmoji = (type: string) => {
