@@ -4,35 +4,20 @@ import { storage } from "@/lib/storage"
 export async function POST(request: Request) {
   try {
     const { postId, username, voteType } = await request.json()
-    const post = storage.communityPosts.get(postId)
-
-    if (!post) {
-      return NextResponse.json({ error: "Post not found" }, { status: 404 })
-    }
 
     if (voteType === "upvote") {
-      // Remove from downvotes if present
-      post.downvotes = post.downvotes.filter((u) => u !== username)
-
-      // Toggle upvote
-      if (post.upvotes.includes(username)) {
-        post.upvotes = post.upvotes.filter((u) => u !== username)
-      } else {
-        post.upvotes.push(username)
-      }
+      await storage.communities.vote(postId, username, 'up')
     } else if (voteType === "downvote") {
-      // Remove from upvotes if present
-      post.upvotes = post.upvotes.filter((u) => u !== username)
-
-      // Toggle downvote
-      if (post.downvotes.includes(username)) {
-        post.downvotes = post.downvotes.filter((u) => u !== username)
-      } else {
-        post.downvotes.push(username)
-      }
+      await storage.communities.vote(postId, username, 'down')
     }
 
-    storage.communityPosts.set(postId, post)
+    const communities = await storage.communities.getAll()
+    let post = null
+    for (const community of communities) {
+      const posts = await storage.communities.getPosts(community.id)
+      post = posts.find(p => p.id === postId)
+      if (post) break
+    }
 
     return NextResponse.json(post)
   } catch (error) {

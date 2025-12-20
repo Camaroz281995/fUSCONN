@@ -5,10 +5,13 @@ import { useUser } from "@/context/user-context"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Search, UserPlus, Users, Check, X, MessageSquare, Video } from "lucide-react"
+import { Search, UserPlus, Users, Check, X, MessageSquare, Video } from 'lucide-react'
 import { persistentStorage } from "@/lib/persistent-storage"
 import type { FriendRequest } from "@/lib/types"
-import { v4 as uuidv4 } from "uuid"
+
+function generateId() {
+  return crypto.randomUUID()
+}
 
 interface Friend {
   username: string
@@ -39,10 +42,8 @@ export default function FriendsTab() {
     if (!username) return
     const profile = persistentStorage.getUserProfile(username)
     if (profile && profile.friends) {
-      // Convert friends list to Friend objects with online/offline status
       const friendsList = profile.friends.map((friendName) => ({
         username: friendName,
-        // Random status for demo purposes - in production would check actual online status
         status: Math.random() > 0.5 ? "online" : ("offline" as "online" | "offline"),
       }))
       setFriends(friendsList)
@@ -66,7 +67,7 @@ export default function FriendsTab() {
     if (!username) return
 
     const newRequest: FriendRequest = {
-      id: uuidv4(),
+      id: generateId(),
       from: username,
       to: toUsername,
       status: "pending",
@@ -86,7 +87,6 @@ export default function FriendsTab() {
           My Friends
         </h2>
 
-        {/* Search */}
         <div className="relative mb-4">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
           <Input
@@ -97,7 +97,6 @@ export default function FriendsTab() {
           />
         </div>
 
-        {/* Friend Requests */}
         {friendRequests.length > 0 && (
           <div className="mb-6">
             <h3 className="font-bold text-lg mb-3" style={{ color: "#006699" }}>
@@ -138,7 +137,6 @@ export default function FriendsTab() {
           </div>
         )}
 
-        {/* Add Friend */}
         {searchQuery && !friends.some((f) => f.username === searchQuery) && (
           <div className="mb-6 p-4 border rounded-lg bg-white">
             <h3 className="font-bold text-lg mb-2">Add New Friend</h3>
@@ -160,7 +158,6 @@ export default function FriendsTab() {
           </div>
         )}
 
-        {/* Friends List */}
         <div>
           <h3 className="font-bold text-lg mb-3 flex items-center gap-2" style={{ color: "#006699" }}>
             <Users className="w-5 h-5" />

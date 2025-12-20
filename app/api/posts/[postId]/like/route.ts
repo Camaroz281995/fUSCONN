@@ -1,26 +1,15 @@
 import { NextResponse } from "next/server"
 import { storage } from "@/lib/storage"
 
-export async function POST(request: Request, { params }: { params: { postId: string } }) {
+export async function POST(request: Request, { params }: { params: Promise<{ postId: string }> }) {
   try {
     const { username } = await request.json()
-    const post = storage.posts.get(params.postId)
-
-    if (!post) {
-      return NextResponse.json({ error: "Post not found" }, { status: 404 })
-    }
-
-    // Remove from dislikes if present
-    post.dislikes = post.dislikes.filter((u) => u !== username)
-
-    // Toggle like
-    if (post.likes.includes(username)) {
-      post.likes = post.likes.filter((u) => u !== username)
-    } else {
-      post.likes.push(username)
-    }
-
-    storage.posts.set(params.postId, post)
+    const { postId } = await params
+    
+    await storage.posts.like(postId, username)
+    
+    const posts = await storage.posts.getAll()
+    const post = posts.find(p => p.id === postId)
 
     return NextResponse.json(post)
   } catch (error) {

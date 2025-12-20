@@ -1,23 +1,15 @@
 import { NextResponse } from "next/server"
 import { storage } from "@/lib/storage"
 
-export async function POST(request: Request, { params }: { params: { communityId: string } }) {
+export async function POST(request: Request, { params }: { params: Promise<{ communityId: string }> }) {
   try {
     const { username } = await request.json()
-    const community = storage.communities.get(params.communityId)
+    const { communityId } = await params
 
-    if (!community) {
-      return NextResponse.json({ error: "Community not found" }, { status: 404 })
-    }
-
-    // Toggle membership
-    if (community.members.includes(username)) {
-      community.members = community.members.filter((m) => m !== username)
-    } else {
-      community.members.push(username)
-    }
-
-    storage.communities.set(params.communityId, community)
+    await storage.communities.join(communityId, username)
+    
+    const communities = await storage.communities.getAll()
+    const community = communities.find(c => c.id === communityId)
 
     return NextResponse.json(community)
   } catch (error) {

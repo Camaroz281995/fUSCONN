@@ -1,24 +1,9 @@
-import { sql } from "@vercel/postgres"
 import { NextResponse } from "next/server"
+import { storage } from "@/lib/storage"
 
 export async function GET() {
   try {
-    const { rows } = await sql`
-      SELECT * FROM communities 
-      ORDER BY member_count DESC, created_at DESC
-    `
-
-    const communities = rows.map((row) => ({
-      id: row.id,
-      name: row.name,
-      description: row.description,
-      creator: row.creator,
-      members: row.members || [],
-      memberCount: row.member_count || 0,
-      isPrivate: row.is_private || false,
-      category: row.category || "general",
-      createdAt: row.created_at,
-    }))
+    const communities = storage.communities.getAll()
 
     return NextResponse.json({ communities })
   } catch (error) {

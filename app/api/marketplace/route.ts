@@ -1,5 +1,3 @@
-export const runtime = "edge"
-
 import { storage } from "@/lib/storage"
 import { NextResponse } from "next/server"
 
@@ -18,15 +16,11 @@ interface MarketplaceListing {
   status: string
 }
 
-const listings = new Map<string, MarketplaceListing>()
-
 export async function GET() {
   try {
-    const allListings = Array.from(listings.values())
-      .filter((listing) => listing.status === "active")
-      .sort((a, b) => b.timestamp - a.timestamp)
+    const listings = await storage.marketplace.getAll()
 
-    return NextResponse.json({ listings: allListings })
+    return NextResponse.json({ listings })
   } catch (error) {
     console.error("Error fetching marketplace listings:", error)
     return NextResponse.json({ error: "Failed to fetch listings" }, { status: 500 })
@@ -43,8 +37,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
     }
 
-    const newListing: MarketplaceListing = {
-      id: `listing-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    const newListing = await storage.marketplace.create({
       title,
       description: description || "",
       price: Number.parseFloat(price),
@@ -52,13 +45,9 @@ export async function POST(request: Request) {
       location: location || "",
       imageUrl: imageUrl || "",
       sellerUsername,
-      timestamp: Date.now(),
       contactEmail: contactEmail || null,
       contactPhone: contactPhone || null,
-      status: "active",
-    }
-
-    listings.set(newListing.id, newListing)
+    })
 
     return NextResponse.json({ listing: newListing })
   } catch (error) {

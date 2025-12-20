@@ -9,8 +9,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Username and password required" }, { status: 400 })
     }
 
-    // Check if user already exists
-    const existingUser = storage.users.get(username)
+    const existingUser = await storage.users.get(username)
     if (existingUser) {
       return NextResponse.json({ error: "Username already exists" }, { status: 400 })
     }
@@ -25,7 +24,7 @@ export async function POST(request: Request) {
       createdAt: Date.now(),
     }
 
-    storage.users.set(username, newUser)
+    await storage.users.set(username, newUser)
 
     return NextResponse.json({ success: true, user: { username, id: newUser.id } })
   } catch (error) {

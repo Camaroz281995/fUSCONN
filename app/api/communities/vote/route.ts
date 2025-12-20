@@ -1,43 +1,33 @@
-import { sql } from "@vercel/postgres"
 import { type NextRequest, NextResponse } from "next/server"
+import { storage } from "@/lib/storage"
 
 export async function POST(request: NextRequest) {
   try {
     const { postId, username, voteType } = await request.json()
 
-    const { rows } = await sql`
-      SELECT upvotes, downvotes FROM community_posts WHERE id = ${postId}
-    `
+    const post = storage.communityPosts.get(postId)
 
-    if (rows.length === 0) {
+    if (!post) {
       return NextResponse.json({ error: "Post not found" }, { status: 404 })
     }
 
-    let upvotes = rows[0].upvotes || []
-    let downvotes = rows[0].downvotes || []
-
     if (voteType === "up") {
-      if (upvotes.includes(username)) {
-        upvotes = upvotes.filter((u: string) => u !== username)
+      if (post.upvotes.includes(username)) {
+        post.upvotes = post.upvotes.filter((u) => u !== username)
       } else {
-        upvotes.push(username)
-        downvotes = downvotes.filter((u: string) => u !== username)
+        post.upvotes.push(username)
+        post.downvotes = post.downvotes.filter((u) => u !== username)
       }
     } else {
-      if (downvotes.includes(username)) {
-        downvotes = downvotes.filter((u: string) => u !== username)
+      if (post.downvotes.includes(username)) {
+        post.downvotes = post.downvotes.filter((u) => u !== username)
       } else {
-        downvotes.push(username)
-        upvotes = upvotes.filter((u: string) => u !== username)
+        post.downvotes.push(username)
+        post.upvotes = post.upvotes.filter((u) => u !== username)
       }
     }
 
-    await sql`
-      UPDATE community_posts 
-      SET upvotes = ${JSON.stringify(upvotes)}, 
-          downvotes = ${JSON.stringify(downvotes)}
-      WHERE id = ${postId}
-    `
+    storage.communityPosts.set(postId, post)
 
     return NextResponse.json({ success: true })
   } catch (error) {

@@ -1,29 +1,19 @@
-import { sql } from "@vercel/postgres"
 import { type NextRequest, NextResponse } from "next/server"
+import { storage } from "@/lib/storage"
 
 export async function POST(request: NextRequest) {
   try {
     const { communityId, username } = await request.json()
 
-    // Get current community
-    const { rows } = await sql`
-      SELECT members, member_count FROM communities WHERE id = ${communityId}
-    `
+    const community = storage.communities.get(communityId)
 
-    if (rows.length === 0) {
+    if (!community) {
       return NextResponse.json({ error: "Community not found" }, { status: 404 })
     }
 
-    const members = rows[0].members || []
-    if (!members.includes(username)) {
-      members.push(username)
-
-      await sql`
-        UPDATE communities 
-        SET members = ${JSON.stringify(members)}, 
-            member_count = ${members.length}
-        WHERE id = ${communityId}
-      `
+    if (!community.members.includes(username)) {
+      community.members.push(username)
+      storage.communities.set(communityId, community)
     }
 
     return NextResponse.json({ success: true })

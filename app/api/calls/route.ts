@@ -1,5 +1,4 @@
-export const runtime = "edge"
-
+import { storage } from "@/lib/storage"
 import { NextResponse } from "next/server"
 
 interface CallHistory {
@@ -12,8 +11,6 @@ interface CallHistory {
   status: "completed" | "missed" | "declined"
 }
 
-const callHistory = new Map<string, CallHistory>()
-
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
@@ -23,11 +20,9 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Username required" }, { status: 400 })
     }
 
-    const userCalls = Array.from(callHistory.values())
-      .filter((call) => call.caller === username || call.recipient === username)
-      .sort((a, b) => b.timestamp - a.timestamp)
+    const calls = await storage.calls.getByUser(username)
 
-    return NextResponse.json({ calls: userCalls })
+    return NextResponse.json({ calls })
   } catch (error) {
     console.error("Error fetching call history:", error)
     return NextResponse.json({ error: "Failed to fetch call history" }, { status: 500 })
@@ -43,17 +38,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
     }
 
-    const newCall: CallHistory = {
-      id: `call-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    const newCall = await storage.calls.create({
       caller,
       recipient,
       type,
       duration: duration || 0,
-      timestamp: Date.now(),
       status: status || "completed",
-    }
-
-    callHistory.set(newCall.id, newCall)
+    })
 
     return NextResponse.json({ call: newCall })
   } catch (error) {

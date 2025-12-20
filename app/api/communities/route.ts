@@ -3,7 +3,7 @@ import { storage } from "@/lib/storage"
 
 export async function GET() {
   try {
-    const communities = storage.communities.getAll()
+    const communities = await storage.communities.getAll()
     return NextResponse.json(communities)
   } catch (error) {
     console.error("Error getting communities:", error)
@@ -28,7 +28,8 @@ export async function POST(request: Request) {
       createdAt: Date.now(),
     }
 
-    storage.communities.set(newCommunity.id, newCommunity)
+    await storage.communities.set(newCommunity.id, newCommunity)
+    await storage.communities.join(newCommunity.id, creator)
 
     return NextResponse.json(newCommunity)
   } catch (error) {

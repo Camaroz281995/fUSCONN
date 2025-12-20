@@ -3,7 +3,7 @@ import { storage } from "@/lib/storage"
 
 export async function GET() {
   try {
-    const posts = storage.posts.getAll()
+    const posts = await storage.posts.getAll()
     return NextResponse.json(posts)
   } catch (error) {
     console.error("Error getting posts:", error)
@@ -32,7 +32,7 @@ export async function POST(request: Request) {
       comments: [],
     }
 
-    storage.posts.set(newPost.id, newPost)
+    await storage.posts.set(newPost.id, newPost)
 
     return NextResponse.json(newPost)
   } catch (error) {

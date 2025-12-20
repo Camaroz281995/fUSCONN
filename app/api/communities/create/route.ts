@@ -1,22 +1,23 @@
-import { sql } from "@vercel/postgres"
 import { type NextRequest, NextResponse } from "next/server"
+import { storage } from "@/lib/storage"
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { id, name, description, creator, members, memberCount, isPrivate, category, createdAt } = body
+    const { id, name, description, creator } = body
 
-    await sql`
-      INSERT INTO communities (
-        id, name, description, creator, members, member_count, 
-        is_private, category, created_at
-      ) VALUES (
-        ${id}, ${name}, ${description}, ${creator}, ${JSON.stringify(members)}, 
-        ${memberCount}, ${isPrivate}, ${category}, ${createdAt}
-      )
-    `
+    const community = {
+      id,
+      name,
+      description,
+      creator,
+      members: [creator],
+      createdAt: Date.now(),
+    }
 
-    return NextResponse.json({ success: true })
+    storage.communities.set(id, community)
+
+    return NextResponse.json({ success: true, community })
   } catch (error) {
     console.error("Error creating community:", error)
     return NextResponse.json({ error: "Failed to create community" }, { status: 500 })

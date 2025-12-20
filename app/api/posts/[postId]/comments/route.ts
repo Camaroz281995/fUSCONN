@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server"
 import { storage } from "@/lib/storage"
 
-export async function GET(request: Request, { params }: { params: { postId: string } }) {
+export async function GET(request: Request, { params }: { params: Promise<{ postId: string }> }) {
   try {
-    const post = storage.posts.get(params.postId)
+    const { postId } = await params
+    const posts = await storage.posts.getAll()
+    const post = posts.find(p => p.id === postId)
 
     if (!post) {
       return NextResponse.json({ error: "Post not found" }, { status: 404 })
@@ -16,13 +18,13 @@ export async function GET(request: Request, { params }: { params: { postId: stri
   }
 }
 
-export async function POST(request: Request, { params }: { params: { postId: string } }) {
+export async function POST(request: Request, { params }: { params: Promise<{ postId: string }> }) {
   try {
     const { username, content } = await request.json()
-    const post = storage.posts.get(params.postId)
+    const { postId } = await params
 
-    if (!post) {
-      return NextResponse.json({ error: "Post not found" }, { status: 404 })
+    if (!username || !content) {
+      return NextResponse.json({ error: "Username and content required" }, { status: 400 })
     }
 
     const newComment = {
@@ -32,12 +34,14 @@ export async function POST(request: Request, { params }: { params: { postId: str
       createdAt: Date.now(),
     }
 
-    post.comments.push(newComment)
-    storage.posts.set(params.postId, post)
+    await storage.posts.addComment(postId, newComment)
+    
+    const posts = await storage.posts.getAll()
+    const post = posts.find(p => p.id === postId)
 
-    return NextResponse.json(newComment)
+    return NextResponse.json(post)
   } catch (error) {
-    console.error("Error creating comment:", error)
-    return NextResponse.json({ error: "Failed to create comment" }, { status: 500 })
+    console.error("Error adding comment:", error)
+    return NextResponse.json({ error: "Failed to add comment" }, { status: 500 })
   }
 }

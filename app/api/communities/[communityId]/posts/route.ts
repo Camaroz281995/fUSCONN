@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server"
 import { storage } from "@/lib/storage"
 
-export async function GET(request: Request, { params }: { params: { communityId: string } }) {
+export async function GET(request: Request, { params }: { params: Promise<{ communityId: string }> }) {
   try {
-    const posts = storage.communityPosts.getByCommunity(params.communityId)
+    const { communityId } = await params
+    const posts = await storage.communities.getPosts(communityId)
     return NextResponse.json(posts)
   } catch (error) {
     console.error("Error getting community posts:", error)
@@ -11,9 +12,10 @@ export async function GET(request: Request, { params }: { params: { communityId:
   }
 }
 
-export async function POST(request: Request, { params }: { params: { communityId: string } }) {
+export async function POST(request: Request, { params }: { params: Promise<{ communityId: string }> }) {
   try {
     const { username, content } = await request.json()
+    const { communityId } = await params
 
     if (!username || !content) {
       return NextResponse.json({ error: "Username and content required" }, { status: 400 })
@@ -21,7 +23,7 @@ export async function POST(request: Request, { params }: { params: { communityId
 
     const newPost = {
       id: Date.now().toString(),
-      communityId: params.communityId,
+      communityId,
       username,
       content,
       createdAt: Date.now(),
@@ -29,7 +31,7 @@ export async function POST(request: Request, { params }: { params: { communityId
       downvotes: [],
     }
 
-    storage.communityPosts.set(newPost.id, newPost)
+    await storage.communities.addPost(newPost)
 
     return NextResponse.json(newPost)
   } catch (error) {

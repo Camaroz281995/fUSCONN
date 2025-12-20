@@ -1,23 +1,5 @@
-export const runtime = "edge"
-
+import { storage } from "@/lib/storage"
 import { NextResponse } from "next/server"
-
-interface Message {
-  id: string
-  senderId: string
-  content: string
-  timestamp: number
-}
-
-interface Chat {
-  id: string
-  participants: string[]
-  messages: Message[]
-  lastMessage?: string
-  lastMessageTime?: number
-}
-
-const chats = new Map<string, Chat>()
 
 export async function GET(request: Request) {
   try {
@@ -28,11 +10,22 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Username required" }, { status: 400 })
     }
 
-    const userChats = Array.from(chats.values())
-      .filter((chat) => chat.participants.includes(username))
-      .sort((a, b) => (b.lastMessageTime || 0) - (a.lastMessageTime || 0))
+    const dbChats = await storage.chats.getByUser(username)
+    
+    const chats = dbChats.map((chat) => ({
+      id: chat.id,
+      participants: [chat.user1, chat.user2],
+      messages: chat.messages.map((m) => ({
+        id: m.id,
+        senderId: m.sender,
+        content: m.content,
+        timestamp: m.createdAt,
+      })),
+      lastMessage: chat.messages[chat.messages.length - 1]?.content,
+      lastMessageTime: chat.messages[chat.messages.length - 1]?.createdAt,
+    }))
 
-    return NextResponse.json({ chats: userChats })
+    return NextResponse.json({ chats })
   } catch (error) {
     console.error("Error fetching chats:", error)
     return NextResponse.json({ error: "Failed to fetch chats" }, { status: 500 })
@@ -42,29 +35,50 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { participants, username } = body
+    const { participants } = body
 
-    if (!participants || participants.length !== 2 || !username) {
-      return NextResponse.json({ error: "Invalid participants" }, { status: 400 })
+    if (!participants || participants.length !== 2) {
+      return NextResponse.json({ error: "Two participants required" }, { status: 400 })
     }
 
-    const existingChat = Array.from(chats.values()).find(
-      (chat) => chat.participants.includes(participants[0]) && chat.participants.includes(participants[1]),
+    const [user1, user2] = participants
+
+    const existingChats = await storage.chats.getByUser(user1)
+    const existingChat = existingChats.find(
+      (chat) => (chat.user1 === user1 && chat.user2 === user2) || (chat.user1 === user2 && chat.user2 === user1)
     )
 
     if (existingChat) {
-      return NextResponse.json({ chat: existingChat })
+      return NextResponse.json({
+        chat: {
+          id: existingChat.id,
+          participants: [existingChat.user1, existingChat.user2],
+          messages: existingChat.messages.map((m) => ({
+            id: m.id,
+            senderId: m.sender,
+            content: m.content,
+            timestamp: m.createdAt,
+          })),
+        },
+      })
     }
 
-    const newChat: Chat = {
+    const newChat = {
       id: `chat-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      participants,
-      messages: [],
+      user1,
+      user2,
+      createdAt: Date.now(),
     }
 
-    chats.set(newChat.id, newChat)
+    await storage.chats.create(newChat)
 
-    return NextResponse.json({ chat: newChat })
+    return NextResponse.json({
+      chat: {
+        id: newChat.id,
+        participants: [user1, user2],
+        messages: [],
+      },
+    })
   } catch (error) {
     console.error("Error creating chat:", error)
     return NextResponse.json({ error: "Failed to create chat" }, { status: 500 })

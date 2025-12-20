@@ -1,7 +1,7 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { MessageCircle, Users, Home, User, Phone, ShoppingBag, Video, Radio, Dog, LogIn, LogOut } from "lucide-react"
+import { useState, useEffect, useRef } from "react"
+import { MessageCircle, Users, Home, User, Phone, ShoppingBag, Video, Radio, Dog, LogIn, LogOut } from 'lucide-react'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -31,6 +31,7 @@ export default function FusionConnect() {
   const [tempUsername, setTempUsername] = useState("")
   const [tempPassword, setTempPassword] = useState("")
   const [isLoading, setIsLoading] = useState(true)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
 
   useEffect(() => {
     const savedUsername = localStorage.getItem("username")
@@ -58,9 +59,20 @@ export default function FusionConnect() {
       }
     }, 1000)
 
+    const initAudio = () => {
+      if (audioRef.current) {
+        audioRef.current.play().catch((err) => {
+          console.log("Autoplay blocked, will play on first interaction:", err)
+        })
+        document.removeEventListener("click", initAudio)
+      }
+    }
+    document.addEventListener("click", initAudio)
+
     return () => {
       window.removeEventListener("storage", handleStorageChange)
       clearInterval(interval)
+      document.removeEventListener("click", initAudio)
     }
   }, [])
 
@@ -149,6 +161,14 @@ export default function FusionConnect() {
         backgroundAttachment: "fixed",
       }}
     >
+      <audio
+        ref={audioRef}
+        src="/relaxing-piano-music.mp3"
+        loop
+        autoPlay
+        style={{ display: "none" }}
+      />
+
       {backgroundPhoto && (
         <div
           className="fixed inset-0 z-0"

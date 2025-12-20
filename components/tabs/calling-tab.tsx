@@ -31,11 +31,24 @@ export default function CallingTab({ username }: CallingTabProps) {
   const [isMuted, setIsMuted] = useState(false)
   const [isVideoOff, setIsVideoOff] = useState(false)
   const [callDuration, setCallDuration] = useState(0)
-  const videoRef = useRef<HTMLVideoElement>(null)
-  const streamRef = useRef<MediaStream | null>(null)
+  const localVideoRef = useRef<HTMLVideoElement>(null)
+  const remoteVideoRef = useRef<HTMLVideoElement>(null)
+  const localStreamRef = useRef<MediaStream | null>(null)
+  const peerConnectionRef = useRef<RTCPeerConnection | null>(null)
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
   useEffect(() => {
     loadCallHistory()
+    
+    if (username) {
+      startSignalPolling()
+    }
+    
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current)
+      }
+    }
   }, [username])
 
   useEffect(() => {
@@ -47,6 +60,143 @@ export default function CallingTab({ username }: CallingTabProps) {
     }
     return () => clearInterval(interval)
   }, [activeCall])
+
+  const startSignalPolling = () => {
+    pollingIntervalRef.current = setInterval(async () => {
+      if (!username) return
+      
+      try {
+        const response = await fetch(`/api/webrtc/signal?username=${username}`)
+        const data = await response.json()
+        
+        if (data.signals && data.signals.length > 0) {
+          for (const signal of data.signals) {
+            await handleIncomingSignal(signal)
+          }
+        }
+      } catch (error) {
+        console.error("Error polling for signals:", error)
+      }
+    }, 2000) // Poll every 2 seconds
+  }
+
+  const handleIncomingSignal = async (signal: any) => {
+    if (!peerConnectionRef.current) {
+      // Incoming call - create peer connection
+      await setupPeerConnection(signal.from, false)
+    }
+    
+    const pc = peerConnectionRef.current
+    if (!pc) return
+
+    try {
+      if (signal.type === "offer") {
+        await pc.setRemoteDescription(new RTCSessionDescription(signal.signal))
+        const answer = await pc.createAnswer()
+        await pc.setLocalDescription(answer)
+        
+        // Send answer back
+        await fetch("/api/webrtc/signal", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            from: username,
+            to: signal.from,
+            signal: answer,
+            type: "answer",
+          }),
+        })
+        
+        // Show incoming call
+        const newCall: CallHistory = {
+          id: `call-${Date.now()}`,
+          caller: signal.from,
+          recipient: username,
+          type: "video",
+          duration: 0,
+          timestamp: Date.now(),
+          status: "completed",
+        }
+        setActiveCall(newCall)
+        setCallDuration(0)
+      } else if (signal.type === "answer") {
+        await pc.setRemoteDescription(new RTCSessionDescription(signal.signal))
+      } else if (signal.type === "ice-candidate") {
+        await pc.addIceCandidate(new RTCIceCandidate(signal.signal))
+      }
+    } catch (error) {
+      console.error("Error handling signal:", error)
+    }
+  }
+
+  const setupPeerConnection = async (recipient: string, initiator: boolean) => {
+    const pc = new RTCPeerConnection({
+      iceServers: [
+        { urls: "stun:stun.l.google.com:19302" },
+        { urls: "stun:stun1.l.google.com:19302" },
+      ],
+    })
+
+    peerConnectionRef.current = pc
+
+    // Handle ICE candidates
+    pc.onicecandidate = (event) => {
+      if (event.candidate) {
+        fetch("/api/webrtc/signal", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            from: username,
+            to: recipient,
+            signal: event.candidate,
+            type: "ice-candidate",
+          }),
+        })
+      }
+    }
+
+    // Handle remote stream
+    pc.ontrack = (event) => {
+      if (remoteVideoRef.current) {
+        remoteVideoRef.current.srcObject = event.streams[0]
+      }
+    }
+
+    // Get local media
+    const constraints = {
+      audio: true,
+      video: callType === "video",
+    }
+
+    const stream = await navigator.mediaDevices.getUserMedia(constraints)
+    localStreamRef.current = stream
+
+    if (localVideoRef.current) {
+      localVideoRef.current.srcObject = stream
+    }
+
+    // Add local stream to peer connection
+    stream.getTracks().forEach((track) => {
+      pc.addTrack(track, stream)
+    })
+
+    if (initiator) {
+      // Create and send offer
+      const offer = await pc.createOffer()
+      await pc.setLocalDescription(offer)
+      
+      await fetch("/api/webrtc/signal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          from: username,
+          to: recipient,
+          signal: offer,
+          type: "offer",
+        }),
+      })
+    }
+  }
 
   const loadCallHistory = async () => {
     if (!username) return
@@ -60,10 +210,6 @@ export default function CallingTab({ username }: CallingTabProps) {
     } catch (error) {
       console.error("Error loading call history:", error)
     }
-  }
-
-  const saveCallHistory = async (updatedHistory: CallHistory[]) => {
-    setCallHistory(updatedHistory)
   }
 
   const startCall = async (type: "voice" | "video") => {
@@ -83,17 +229,7 @@ export default function CallingTab({ username }: CallingTabProps) {
     }
 
     try {
-      const constraints = {
-        audio: true,
-        video: type === "video",
-      }
-
-      const stream = await navigator.mediaDevices.getUserMedia(constraints)
-      streamRef.current = stream
-
-      if (videoRef.current && type === "video") {
-        videoRef.current.srcObject = stream
-      }
+      await setupPeerConnection(callUsername, true)
 
       const newCall: CallHistory = {
         id: `call-${Date.now()}`,
@@ -116,9 +252,14 @@ export default function CallingTab({ username }: CallingTabProps) {
   }
 
   const endCall = async () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop())
-      streamRef.current = null
+    if (peerConnectionRef.current) {
+      peerConnectionRef.current.close()
+      peerConnectionRef.current = null
+    }
+
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach((track) => track.stop())
+      localStreamRef.current = null
     }
 
     if (activeCall) {
@@ -148,8 +289,8 @@ export default function CallingTab({ username }: CallingTabProps) {
   }
 
   const toggleMute = () => {
-    if (streamRef.current) {
-      streamRef.current.getAudioTracks().forEach((track) => {
+    if (localStreamRef.current) {
+      localStreamRef.current.getAudioTracks().forEach((track) => {
         track.enabled = !track.enabled
       })
       setIsMuted(!isMuted)
@@ -157,8 +298,8 @@ export default function CallingTab({ username }: CallingTabProps) {
   }
 
   const toggleVideo = () => {
-    if (streamRef.current) {
-      streamRef.current.getVideoTracks().forEach((track) => {
+    if (localStreamRef.current) {
+      localStreamRef.current.getVideoTracks().forEach((track) => {
         track.enabled = !track.enabled
       })
       setIsVideoOff(!isVideoOff)
@@ -199,7 +340,14 @@ export default function CallingTab({ username }: CallingTabProps) {
           <div className="text-center space-y-6">
             {activeCall.type === "video" ? (
               <div className="relative aspect-video bg-gray-900 rounded-lg overflow-hidden">
-                <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+                <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-cover" />
+                <video 
+                  ref={localVideoRef} 
+                  autoPlay 
+                  playsInline 
+                  muted 
+                  className="absolute bottom-4 right-4 w-32 h-24 object-cover rounded-lg border-2 border-white shadow-lg" 
+                />
                 {isVideoOff && (
                   <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
                     <Avatar className="h-24 w-24">
@@ -209,13 +357,19 @@ export default function CallingTab({ username }: CallingTabProps) {
                 )}
               </div>
             ) : (
-              <Avatar className="h-32 w-32 mx-auto">
-                <AvatarFallback className="text-5xl">{activeCall.recipient.charAt(0).toUpperCase()}</AvatarFallback>
-              </Avatar>
+              <div>
+                <Avatar className="h-32 w-32 mx-auto">
+                  <AvatarFallback className="text-5xl">
+                    {(activeCall.caller === username ? activeCall.recipient : activeCall.caller).charAt(0).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+                <audio ref={remoteVideoRef} autoPlay />
+                <audio ref={localVideoRef} autoPlay muted />
+              </div>
             )}
 
             <div>
-              <h2 className="text-2xl font-bold">@{activeCall.recipient}</h2>
+              <h2 className="text-2xl font-bold">@{activeCall.caller === username ? activeCall.recipient : activeCall.caller}</h2>
               <p className="text-lg text-muted-foreground">{formatDuration(callDuration)}</p>
             </div>
 

@@ -9,8 +9,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Username and password required" }, { status: 400 })
     }
 
-    // Find user
-    const user = storage.users.get(username)
+    const user = await storage.users.get(username)
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 })
     }
