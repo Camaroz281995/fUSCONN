@@ -1,256 +1,252 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { useUser } from "@/context/user-context"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Card, CardContent } from "@/components/ui/card"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { Radio, Search, Play, Users, Eye } from "lucide-react"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import { Video, Users, Search, Plus, AirplayIcon as Broadcast } from "lucide-react"
+import LiveStream from "@/components/live-streaming/live-stream"
+import { persistentStorage } from "@/lib/persistent-storage"
+import type { LiveStream as LiveStreamType } from "@/lib/types"
 
-interface LiveStream {
-  id: string
-  streamer: string
-  title: string
-  description: string
-  viewers: number
-  isActive: boolean
-  startTime: number
-  category: string
-}
+export default function LiveStreamingTab() {
+  const { username, profilePhoto } = useUser()
+  const [streams, setStreams] = useState<LiveStreamType[]>([])
+  const [filteredStreams, setFilteredStreams] = useState<LiveStreamType[]>([])
+  const [searchQuery, setSearchQuery] = useState("")
+  const [showCreateDialog, setShowCreateDialog] = useState(false)
+  const [streamTitle, setStreamTitle] = useState("")
+  const [streamDescription, setStreamDescription] = useState("")
+  const [currentStream, setCurrentStream] = useState<LiveStreamType | null>(null)
+  const [isHosting, setIsHosting] = useState(false)
 
-interface LiveStreamingTabProps {
-  username: string
-}
+  const fetchStreams = () => {
+    // Get streams from persistent storage
+    const allStreams = persistentStorage.getLiveStreams()
+    setStreams(allStreams)
 
-export default function LiveStreamingTab({ username }: LiveStreamingTabProps) {
-  const [streams, setStreams] = useState<LiveStream[]>([])
-  const [searchTerm, setSearchTerm] = useState("")
-  const [isLive, setIsLive] = useState(false)
+    // Apply initial filtering
+    filterStreams(allStreams)
+  }
 
   useEffect(() => {
-    loadStreams()
+    fetchStreams()
 
-    const interval = setInterval(() => {
-      loadStreams()
-    }, 5000)
-
+    // Refresh streams every 30 seconds
+    const interval = setInterval(fetchStreams, 30000)
     return () => clearInterval(interval)
   }, [])
 
-  const loadStreams = () => {
-    try {
-      const storedStreams = localStorage.getItem("fusconn-global-streams")
-      if (storedStreams) {
-        const allStreams: LiveStream[] = JSON.parse(storedStreams)
-        const activeStreams = allStreams.filter((stream) => stream.isActive)
-        setStreams(activeStreams)
+  useEffect(() => {
+    filterStreams(streams)
+  }, [streams, searchQuery])
 
-        if (username) {
-          const userStream = activeStreams.find((s) => s.streamer === username)
-          setIsLive(!!userStream)
-        }
-      }
-    } catch (error) {
-      console.error("Error loading streams:", error)
-    }
-  }
-
-  const startStream = () => {
-    if (!username) {
-      alert("Please sign in to start streaming")
+  const filterStreams = (allStreams: LiveStreamType[]) => {
+    if (!searchQuery.trim()) {
+      setFilteredStreams(allStreams)
       return
     }
 
-    try {
-      const storedStreams = localStorage.getItem("fusconn-global-streams")
-      const allStreams: LiveStream[] = storedStreams ? JSON.parse(storedStreams) : []
+    const query = searchQuery.toLowerCase()
+    const filtered = allStreams.filter(
+      (stream) =>
+        stream.title.toLowerCase().includes(query) ||
+        stream.hostUsername.toLowerCase().includes(query) ||
+        stream.tags.some((tag) => tag.toLowerCase().includes(query)),
+    )
 
-      const newStream: LiveStream = {
-        id: `stream-${Date.now()}`,
-        streamer: username,
-        title: `${username}'s Live Stream`,
-        description: "Live from P2P network",
-        viewers: 0,
-        isActive: true,
-        startTime: Date.now(),
-        category: "General",
-      }
-
-      allStreams.push(newStream)
-      localStorage.setItem("fusconn-global-streams", JSON.stringify(allStreams))
-      setIsLive(true)
-      loadStreams()
-    } catch (error) {
-      console.error("Error starting stream:", error)
-    }
+    setFilteredStreams(filtered)
   }
 
-  const stopStream = () => {
-    if (!username) return
+  const handleCreateStream = () => {
+    if (!username || !streamTitle.trim()) return
 
-    try {
-      const storedStreams = localStorage.getItem("fusconn-global-streams")
-      if (storedStreams) {
-        const allStreams: LiveStream[] = JSON.parse(storedStreams)
-        const updatedStreams = allStreams.map((stream) =>
-          stream.streamer === username ? { ...stream, isActive: false } : stream,
-        )
-        localStorage.setItem("fusconn-global-streams", JSON.stringify(updatedStreams))
-        setIsLive(false)
-        loadStreams()
-      }
-    } catch (error) {
-      console.error("Error stopping stream:", error)
+    const newStream: LiveStreamType = {
+      id: Date.now().toString(),
+      hostUsername: username,
+      hostAvatar: profilePhoto || null,
+      title: streamTitle.trim(),
+      description: streamDescription.trim() || "Welcome to my live stream!",
+      viewerCount: 0,
+      startedAt: Date.now(),
+      tags: ["New", "Live"],
+      isLive: true,
     }
+
+    persistentStorage.saveLiveStream(newStream)
+    setStreams((prev) => [newStream, ...prev])
+    setShowCreateDialog(false)
+
+    // Start hosting
+    setCurrentStream(newStream)
+    setIsHosting(true)
   }
 
-  const filteredStreams = streams.filter(
-    (stream) =>
-      stream.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      stream.streamer.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      stream.category.toLowerCase().includes(searchTerm.toLowerCase()),
-  )
+  const handleJoinStream = (stream: LiveStreamType) => {
+    setCurrentStream(stream)
+    setIsHosting(false)
+  }
 
-  const formatDuration = (startTime: number) => {
-    const duration = Date.now() - startTime
-    const minutes = Math.floor(duration / 60000)
-    const hours = Math.floor(minutes / 60)
+  const handleCloseStream = () => {
+    if (isHosting && currentStream) {
+      // End the stream
+      const updatedStream = { ...currentStream, isLive: false }
+      persistentStorage.saveLiveStream(updatedStream)
 
-    if (hours > 0) {
-      return `${hours}h ${minutes % 60}m`
+      // Update streams list
+      setStreams((prev) => prev.map((s) => (s.id === currentStream.id ? updatedStream : s)))
     }
-    return `${minutes}m`
+
+    setCurrentStream(null)
+    setIsHosting(false)
+  }
+
+  if (!username) {
+    return (
+      <div className="text-center py-8">
+        <p className="text-muted-foreground">Please set your username in the Profile tab to use live streaming</p>
+      </div>
+    )
   }
 
   return (
-    <div className="space-y-4">
-      <Card className="bg-white shadow-md">
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-2xl font-bold text-blue-600 flex items-center gap-2">
-              <Radio className="h-6 w-6" />
-              Live Streams
-            </CardTitle>
-            {!isLive ? (
-              <Button onClick={startStream} className="bg-gradient-to-r from-red-600 to-pink-600">
-                <Play className="h-4 w-4 mr-2" />
-                Go Live
-              </Button>
-            ) : (
-              <Button onClick={stopStream} variant="destructive">
-                End Stream
-              </Button>
-            )}
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="relative">
-            <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search live streams..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
-            />
-          </div>
-        </CardContent>
-      </Card>
+    <>
+      <div className="space-y-6">
+        <div className="flex justify-between items-center">
+          <h2 className="text-xl font-semibold">Live Streaming</h2>
+          <Button onClick={() => setShowCreateDialog(true)}>
+            <Broadcast className="h-4 w-4 mr-1" />
+            Go Live
+          </Button>
+        </div>
 
-      {isLive && (
-        <Card className="border-red-200 bg-red-50">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
-              <div className="flex-1">
-                <p className="font-semibold text-sm">You're Live!</p>
-                <p className="text-xs text-muted-foreground">Broadcasting to P2P network</p>
-              </div>
-              <Badge variant="destructive" className="text-xs">
-                LIVE
-              </Badge>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+        <div className="relative">
+          <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search streams..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-8"
+          />
+        </div>
 
-      <Card className="bg-white shadow-md">
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <Eye className="h-5 w-5" />
-            Live Now ({filteredStreams.length})
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {filteredStreams.length === 0 ? (
-            <div className="text-center py-12">
-              <Radio className="h-12 w-12 mx-auto mb-4 text-gray-400" />
-              <h3 className="text-lg font-medium mb-2">No live streams</h3>
-              <p className="text-muted-foreground mb-4">
-                {searchTerm ? "No streams match your search" : "Be the first to go live!"}
-              </p>
-              {username && !isLive && (
-                <Button onClick={startStream}>
-                  <Play className="h-4 w-4 mr-2" />
+        <ScrollArea className="h-[calc(100vh-250px)]">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filteredStreams.length === 0 ? (
+              <div className="col-span-full text-center py-8">
+                <Video className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                <h3 className="text-lg font-medium mb-2">No Live Streams</h3>
+                <p className="text-muted-foreground mb-4">
+                  {searchQuery.trim() ? "No streams match your search" : "There are no active streams right now"}
+                </p>
+                <Button onClick={() => setShowCreateDialog(true)}>
+                  <Plus className="h-4 w-4 mr-1" />
                   Start Streaming
                 </Button>
-              )}
-              {!username && (
-                <div className="mt-4 p-3 bg-yellow-50 rounded-lg">
-                  <p className="text-sm text-gray-700">Sign in to start streaming</p>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {filteredStreams.map((stream) => (
-                <div key={stream.id} className="border rounded-lg p-4">
-                  <div className="flex gap-4">
-                    <div className="w-20 h-20 bg-gradient-to-br from-red-500 to-pink-500 rounded-lg flex items-center justify-center relative">
-                      <Play className="h-8 w-8 text-white" />
-                      <div className="absolute -top-1 -right-1">
-                        <Badge variant="destructive" className="text-xs px-1">
-                          LIVE
-                        </Badge>
-                      </div>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1 min-w-0">
-                          <h3 className="font-semibold text-sm truncate">{stream.title}</h3>
-                          <p className="text-xs text-muted-foreground mb-2">{stream.description}</p>
-                          <div className="flex items-center gap-2 mb-2">
-                            <Avatar className="h-5 w-5">
-                              <AvatarFallback className="text-xs">
-                                {stream.streamer.charAt(0).toUpperCase()}
-                              </AvatarFallback>
-                            </Avatar>
-                            <span className="text-xs text-muted-foreground">@{stream.streamer}</span>
-                          </div>
-                          <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                            <div className="flex items-center gap-1">
-                              <Users className="h-3 w-3" />
-                              <span>{stream.viewers} viewers</span>
-                            </div>
-                            <Badge variant="outline" className="text-xs">
-                              {stream.category}
-                            </Badge>
-                            <span>{formatDuration(stream.startTime)}</span>
-                          </div>
-                        </div>
-                        <Button size="sm" disabled={stream.streamer === username}>
-                          <Eye className="h-3 w-3 mr-1" />
-                          Watch
-                        </Button>
-                      </div>
+              </div>
+            ) : (
+              filteredStreams.map((stream) => (
+                <Card key={stream.id} className={`overflow-hidden ${!stream.isLive ? "opacity-60" : ""}`}>
+                  <div className="aspect-video bg-muted relative">
+                    <img
+                      src="/placeholder.svg?height=200&width=320"
+                      alt={stream.title}
+                      className="w-full h-full object-cover"
+                    />
+                    {stream.isLive && (
+                      <Badge variant="destructive" className="absolute top-2 left-2">
+                        LIVE
+                      </Badge>
+                    )}
+                    <div className="absolute bottom-2 right-2 bg-black/70 text-white text-xs px-2 py-1 rounded-md flex items-center">
+                      <Users className="h-3 w-3 mr-1" />
+                      {stream.viewerCount}
                     </div>
                   </div>
-                </div>
-              ))}
+
+                  <CardContent className="p-4">
+                    <div className="flex items-start gap-3">
+                      <Avatar className="h-10 w-10">
+                        <AvatarImage src={stream.hostAvatar || undefined} />
+                        <AvatarFallback>{stream.hostUsername.substring(0, 2).toUpperCase()}</AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-medium truncate">{stream.title}</h3>
+                        <p className="text-sm text-muted-foreground">{stream.hostUsername}</p>
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {stream.tags.map((tag) => (
+                            <Badge key={tag} variant="outline" className="text-xs">
+                              {tag}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    <Button className="w-full mt-4" disabled={!stream.isLive} onClick={() => handleJoinStream(stream)}>
+                      {stream.isLive ? "Join Stream" : "Ended"}
+                    </Button>
+                  </CardContent>
+                </Card>
+              ))
+            )}
+          </div>
+        </ScrollArea>
+      </div>
+
+      {/* Create Stream Dialog */}
+      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Start Live Stream</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="stream-title">Stream Title</Label>
+              <Input
+                id="stream-title"
+                placeholder="Enter a title for your stream"
+                value={streamTitle}
+                onChange={(e) => setStreamTitle(e.target.value)}
+              />
             </div>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="stream-description">Description (optional)</Label>
+              <Textarea
+                id="stream-description"
+                placeholder="Tell viewers what your stream is about"
+                value={streamDescription}
+                onChange={(e) => setStreamDescription(e.target.value)}
+                rows={3}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleCreateStream} disabled={!streamTitle.trim()}>
+              <Broadcast className="h-4 w-4 mr-1" />
+              Go Live
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Live Stream Component */}
+      {currentStream && (
+        <LiveStream stream={isHosting ? undefined : currentStream} isHost={isHosting} onClose={handleCloseStream} />
+      )}
+    </>
   )
 }

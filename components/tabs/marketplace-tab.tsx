@@ -1,325 +1,225 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { useUser } from "@/context/user-context"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
-import { Badge } from "@/components/ui/badge"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { ShoppingBag, Search, Plus, DollarSign, Package, Tag, MapPin, AlertCircle } from 'lucide-react'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Label } from "@/components/ui/label"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { ScrollArea } from "@/components/ui/scroll-area"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Plus, Search, Tag, MapPin } from "lucide-react"
+import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog"
+import MarketplaceListing from "@/components/marketplace/marketplace-listing"
+import CreateListingForm from "@/components/marketplace/create-listing-form"
+import { persistentStorage } from "@/lib/persistent-storage"
+import type { MarketplaceListing as MarketplaceListingType } from "@/lib/types"
 
-const CATEGORIES = ["Electronics", "Fashion", "Home", "Books", "Sports", "Vehicles", "Other"]
-
-interface MarketplaceListing {
-  id: string
-  title: string
-  description: string
-  price: number
-  category: string
-  location: string
-  imageUrl: string
-  sellerUsername: string
-  timestamp: number
-  contactEmail: string | null
-  contactPhone: string | null
-  status: string
-}
-
-interface MarketplaceTabProps {
-  username: string
-}
-
-export default function MarketplaceTab({ username }: MarketplaceTabProps) {
-  const [listings, setListings] = useState<MarketplaceListing[]>([])
-  const [searchTerm, setSearchTerm] = useState("")
-  const [selectedCategory, setSelectedCategory] = useState<string>("all")
+export default function MarketplaceTab() {
+  const { username } = useUser()
+  const [listings, setListings] = useState<MarketplaceListingType[]>([])
+  const [filteredListings, setFilteredListings] = useState<MarketplaceListingType[]>([])
+  const [loading, setLoading] = useState(true)
+  const [activeTab, setActiveTab] = useState("browse")
+  const [searchQuery, setSearchQuery] = useState("")
+  const [categoryFilter, setCategoryFilter] = useState("")
+  const [locationFilter, setLocationFilter] = useState("")
   const [showCreateDialog, setShowCreateDialog] = useState(false)
-  const [newTitle, setNewTitle] = useState("")
-  const [newDescription, setNewDescription] = useState("")
-  const [newPrice, setNewPrice] = useState("")
-  const [newCategory, setNewCategory] = useState("")
-  const [newLocation, setNewLocation] = useState("")
+
+  const fetchListings = async () => {
+    try {
+      setLoading(true)
+
+      // Get listings from persistent storage
+      const allListings = persistentStorage.getMarketplaceListings()
+      setListings(allListings)
+
+      // Apply initial filtering
+      filterListings(allListings)
+    } catch (error) {
+      console.error("Error fetching marketplace listings:", error)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   useEffect(() => {
-    loadListings()
-    const interval = setInterval(loadListings, 10000)
+    fetchListings()
+
+    // Refresh listings every 60 seconds
+    const interval = setInterval(fetchListings, 60000)
     return () => clearInterval(interval)
   }, [])
 
-  const loadListings = async () => {
-    try {
-      const response = await fetch("/api/marketplace")
-      const data = await response.json()
-      if (data.listings) {
-        setListings(data.listings)
-      }
-    } catch (error) {
-      console.error("Error loading listings:", error)
-    }
-  }
+  useEffect(() => {
+    filterListings(listings)
+  }, [listings, searchQuery, categoryFilter, locationFilter, activeTab])
 
-  const saveListings = async (updatedListings: MarketplaceListing[]) => {
-    setListings(updatedListings)
-  }
+  const filterListings = (allListings: MarketplaceListingType[]) => {
+    let filtered = [...allListings]
 
-  const handleCreateListing = async () => {
-    if (!username) {
-      alert("Please sign in to create listings")
-      return
+    // Filter by tab
+    if (activeTab === "my-listings" && username) {
+      filtered = filtered.filter((listing) => listing.sellerUsername === username)
     }
 
-    if (!newTitle.trim() || !newPrice || !newCategory) {
-      alert("Please fill in all required fields")
-      return
+    // Apply search filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase()
+      filtered = filtered.filter(
+        (listing) => listing.title.toLowerCase().includes(query) || listing.description.toLowerCase().includes(query),
+      )
     }
 
-    try {
-      const response = await fetch("/api/marketplace", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: newTitle.trim(),
-          description: newDescription.trim(),
-          price: newPrice,
-          category: newCategory,
-          location: newLocation.trim(),
-          imageUrl: "",
-          sellerUsername: username,
-          contactEmail: null,
-          contactPhone: null,
-        }),
-      })
-
-      const data = await response.json()
-
-      if (data.listing) {
-        await loadListings()
-        setNewTitle("")
-        setNewDescription("")
-        setNewPrice("")
-        setNewCategory("")
-        setNewLocation("")
-        setShowCreateDialog(false)
-      }
-    } catch (error) {
-      console.error("Error creating listing:", error)
-      alert("Failed to create listing")
+    // Apply category filter
+    if (categoryFilter) {
+      filtered = filtered.filter((listing) => listing.category === categoryFilter)
     }
+
+    // Apply location filter
+    if (locationFilter) {
+      filtered = filtered.filter((listing) => listing.location.toLowerCase().includes(locationFilter.toLowerCase()))
+    }
+
+    setFilteredListings(filtered)
   }
 
-  const filteredListings = listings.filter((listing) => {
-    const matchesSearch =
-      listing.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      listing.description.toLowerCase().includes(searchTerm.toLowerCase())
-
-    const matchesCategory = selectedCategory === "all" || listing.category === selectedCategory
-
-    return matchesSearch && matchesCategory && listing.status === "active"
-  })
-
-  const formatPrice = (price: number) => {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-    }).format(price)
+  const handleListingCreated = () => {
+    setShowCreateDialog(false)
+    fetchListings()
   }
+
+  // Get unique categories and locations for filters
+  const categories = [...new Set(listings.map((listing) => listing.category))].sort()
+  const locations = [...new Set(listings.map((listing) => listing.location))].sort()
 
   return (
-    <div className="space-y-4">
-      <Card className="bg-white shadow-md">
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-2xl font-bold text-blue-600 flex items-center gap-2">
-              <ShoppingBag className="h-6 w-6" />
-              Marketplace
-            </CardTitle>
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 h-[calc(100vh-220px)]">
+      {/* Filters */}
+      <Card className="md:col-span-1 h-full">
+        <CardHeader className="px-4 py-3">
+          <CardTitle className="text-lg flex justify-between items-center">
+            <span>Marketplace</span>
             <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
               <DialogTrigger asChild>
-                <Button className="bg-gradient-to-r from-blue-600 to-purple-600">
-                  <Plus className="h-4 w-4 mr-2" />
-                  Sell Item
+                <Button size="sm" variant="outline">
+                  <Plus className="h-4 w-4 mr-1" />
+                  Sell
                 </Button>
               </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Create Listing</DialogTitle>
-                </DialogHeader>
-                {!username ? (
-                  <div className="py-8 text-center">
-                    <AlertCircle className="h-12 w-12 mx-auto mb-4 text-yellow-500" />
-                    <h3 className="text-lg font-medium mb-2">Sign In Required</h3>
-                    <p className="text-muted-foreground mb-4">Please sign in to sell items</p>
-                    <Button onClick={() => setShowCreateDialog(false)}>Close</Button>
-                  </div>
-                ) : (
-                  <div className="space-y-4 py-4">
-                    <div>
-                      <Label htmlFor="title">Title</Label>
-                      <Input
-                        id="title"
-                        placeholder="What are you selling?"
-                        value={newTitle}
-                        onChange={(e) => setNewTitle(e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="description">Description</Label>
-                      <Textarea
-                        id="description"
-                        placeholder="Describe your item..."
-                        value={newDescription}
-                        onChange={(e) => setNewDescription(e.target.value)}
-                        rows={3}
-                      />
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <Label htmlFor="price">Price</Label>
-                        <Input
-                          id="price"
-                          type="number"
-                          step="0.01"
-                          placeholder="0.00"
-                          value={newPrice}
-                          onChange={(e) => setNewPrice(e.target.value)}
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor="category">Category</Label>
-                        <Select value={newCategory} onValueChange={setNewCategory}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {CATEGORIES.map((cat) => (
-                              <SelectItem key={cat} value={cat}>
-                                {cat}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                    <div>
-                      <Label htmlFor="location">Location</Label>
-                      <Input
-                        id="location"
-                        placeholder="City, State"
-                        value={newLocation}
-                        onChange={(e) => setNewLocation(e.target.value)}
-                      />
-                    </div>
-                    <Button onClick={handleCreateListing}>Create Listing</Button>
-                  </div>
-                )}
+              <DialogContent className="sm:max-w-[600px]">
+                <CreateListingForm onListingCreated={handleListingCreated} />
               </DialogContent>
             </Dialog>
-          </div>
+          </CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="flex gap-2 mb-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search marketplace..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
-              />
-            </div>
-          </div>
+        <CardContent className="p-0">
+          <Tabs defaultValue="browse" value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <TabsList className="w-full grid grid-cols-2">
+              <TabsTrigger value="browse">Browse</TabsTrigger>
+              <TabsTrigger value="my-listings">My Listings</TabsTrigger>
+            </TabsList>
 
-          <div className="flex gap-2 overflow-x-auto pb-2">
-            <Badge
-              variant={selectedCategory === "all" ? "default" : "outline"}
-              className="cursor-pointer whitespace-nowrap"
-              onClick={() => setSelectedCategory("all")}
-            >
-              All
-            </Badge>
-            {CATEGORIES.map((category) => (
-              <Badge
-                key={category}
-                variant={selectedCategory === category ? "default" : "outline"}
-                className="cursor-pointer whitespace-nowrap"
-                onClick={() => setSelectedCategory(category)}
-              >
-                {category}
-              </Badge>
-            ))}
-          </div>
+            <div className="p-4 space-y-4">
+              <div className="relative">
+                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search listings..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-8"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center">
+                  <Tag className="h-4 w-4 mr-2 text-muted-foreground" />
+                  <span className="text-sm">Category</span>
+                </div>
+                <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All categories" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All categories</SelectItem>
+                    {categories.map((category) => (
+                      <SelectItem key={category} value={category}>
+                        {category}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center">
+                  <MapPin className="h-4 w-4 mr-2 text-muted-foreground" />
+                  <span className="text-sm">Location</span>
+                </div>
+                <Select value={locationFilter} onValueChange={setLocationFilter}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All locations" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All locations</SelectItem>
+                    {locations.map((location) => (
+                      <SelectItem key={location} value={location}>
+                        {location}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="pt-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full"
+                  onClick={() => {
+                    setSearchQuery("")
+                    setCategoryFilter("")
+                    setLocationFilter("")
+                  }}
+                >
+                  Clear Filters
+                </Button>
+              </div>
+            </div>
+          </Tabs>
         </CardContent>
       </Card>
 
-      {filteredListings.length === 0 ? (
-        <Card className="bg-white shadow-md">
-          <CardContent className="py-12 text-center">
-            <Package className="h-16 w-16 mx-auto mb-4 text-gray-400" />
-            <h3 className="text-lg font-medium mb-2">No items found</h3>
-            <p className="text-muted-foreground mb-4">
-              {searchTerm ? "Try a different search term" : "Be the first to list an item!"}
-            </p>
-            <Button onClick={() => setShowCreateDialog(true)}>
-              <Plus className="h-4 w-4 mr-2" />
-              Create Listing
-            </Button>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredListings.map((listing) => (
-            <Card key={listing.id} className="bg-white shadow-md hover:shadow-lg transition-shadow">
-              <div className="aspect-video bg-gray-200 flex items-center justify-center rounded-t-lg">
-                <Package className="h-16 w-16 text-gray-400" />
+      {/* Listings */}
+      <Card className="md:col-span-2 h-full">
+        <CardContent className="p-4 h-full">
+          <ScrollArea className="h-[calc(100vh-250px)]">
+            {loading ? (
+              <div className="text-center py-8">Loading listings...</div>
+            ) : filteredListings.length === 0 ? (
+              <div className="text-center py-8">
+                {activeTab === "my-listings" ? (
+                  <div>
+                    <p className="mb-4">You haven't created any listings yet</p>
+                    <Button onClick={() => setShowCreateDialog(true)}>
+                      <Plus className="h-4 w-4 mr-1" />
+                      Create Listing
+                    </Button>
+                  </div>
+                ) : (
+                  <p>No listings found matching your filters</p>
+                )}
               </div>
-              <CardContent className="p-4">
-                <div className="flex items-start justify-between mb-2">
-                  <div className="flex-1">
-                    <h3 className="font-bold text-lg line-clamp-1">{listing.title}</h3>
-                    <p className="text-sm text-muted-foreground line-clamp-2 mb-2">{listing.description}</p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 mb-3">
-                  <Badge variant="secondary" className="text-xs">
-                    <Tag className="h-3 w-3 mr-1" />
-                    {listing.category}
-                  </Badge>
-                  {listing.location && (
-                    <Badge variant="outline" className="text-xs">
-                      <MapPin className="h-3 w-3 mr-1" />
-                      {listing.location}
-                    </Badge>
-                  )}
-                </div>
-
-                <div className="flex items-center justify-between pt-3 border-t">
-                  <div className="flex items-center gap-2">
-                    <Avatar className="h-6 w-6">
-                      <AvatarFallback className="text-xs">
-                        {listing.sellerUsername.charAt(0).toUpperCase()}
-                      </AvatarFallback>
-                    </Avatar>
-                    <span className="text-xs text-muted-foreground">@{listing.sellerUsername}</span>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-xl font-bold text-green-600">{formatPrice(listing.price)}</p>
-                  </div>
-                </div>
-
-                <Button className="w-full mt-3">
-                  <DollarSign className="h-4 w-4 mr-2" />
-                  Contact Seller
-                </Button>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {filteredListings.map((listing) => (
+                  <MarketplaceListing key={listing.id} listing={listing} />
+                ))}
+              </div>
+            )}
+          </ScrollArea>
+        </CardContent>
+      </Card>
     </div>
   )
 }
