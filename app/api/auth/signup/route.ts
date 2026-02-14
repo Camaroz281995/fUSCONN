@@ -1,7 +1,15 @@
 import { NextRequest, NextResponse } from "next/server"
 import { neon } from "@neondatabase/serverless"
 
-const sql = neon(process.env.fusconn_DATABASE_URL!)
+const getSql = () => {
+  const connectionString = process.env.fusconn_DATABASE_URL || process.env.DATABASE_URL
+
+  if (!connectionString) {
+    throw new Error('Database connection string is not configured')
+  }
+
+  return neon(connectionString)
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -30,7 +38,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if username already exists
-    const existingUser = await sql`
+    const existingUser = await getSql()`
       SELECT username FROM users WHERE username = ${username}
     `
 
@@ -45,7 +53,7 @@ export async function POST(request: NextRequest) {
     const userId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
     const createdAt = Date.now()
 
-    await sql`
+    await getSql()`
       INSERT INTO users (id, username, password, created_at)
       VALUES (${userId}, ${username}, ${password}, ${createdAt})
     `
