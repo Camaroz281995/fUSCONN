@@ -1,7 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { neon } from '@neondatabase/serverless'
 
-const sql = neon(process.env.DATABASE_URL!)
+const getSql = () => {
+  const connectionString = process.env.fusconn_DATABASE_URL || process.env.DATABASE_URL
+
+  if (!connectionString) {
+    throw new Error('Database connection string is not configured')
+  }
+
+  return neon(connectionString)
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -12,7 +20,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if already a member
-    const existing = await sql`
+    const existing = await getSql()`
       SELECT * FROM profile_community_members 
       WHERE community_id = ${communityId} AND username = ${username}
     `
@@ -22,7 +30,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Add member
-    await sql`
+    await getSql()`
       INSERT INTO profile_community_members (community_id, username)
       VALUES (${communityId}, ${username})
     `
