@@ -1,7 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { neon } from '@neondatabase/serverless'
 
-const sql = neon(process.env.DATABASE_URL!)
+const getSql = () => {
+  const connectionString = process.env.fusconn_DATABASE_URL || process.env.DATABASE_URL
+
+  if (!connectionString) {
+    throw new Error('Database connection string is not configured')
+  }
+
+  return neon(connectionString)
+}
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
@@ -13,7 +21,7 @@ export async function GET(request: NextRequest) {
 
   try {
     // Get all communities where user is a member
-    const communities = await sql`
+    const communities = await getSql()`
       SELECT 
         pc.id,
         pc.name,
@@ -55,7 +63,7 @@ export async function POST(request: NextRequest) {
   try {
     const community = await request.json()
 
-    await sql`
+    await getSql()`
       INSERT INTO profile_communities (id, name, description, creator, is_private, tags, created_at)
       VALUES (
         ${community.id},
@@ -69,7 +77,7 @@ export async function POST(request: NextRequest) {
     `
 
     // Add creator as first member
-    await sql`
+    await getSql()`
       INSERT INTO profile_community_members (community_id, username)
       VALUES (${community.id}, ${community.creator})
     `
@@ -91,10 +99,10 @@ export async function DELETE(request: NextRequest) {
 
   try {
     // Delete members first
-    await sql`DELETE FROM profile_community_members WHERE community_id = ${id}`
+    await getSql()`DELETE FROM profile_community_members WHERE community_id = ${id}`
     
     // Delete community
-    await sql`DELETE FROM profile_communities WHERE id = ${id}`
+    await getSql()`DELETE FROM profile_communities WHERE id = ${id}`
 
     return NextResponse.json({ success: true })
   } catch (error) {
