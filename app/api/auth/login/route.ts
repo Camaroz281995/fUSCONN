@@ -1,7 +1,15 @@
 import { NextRequest, NextResponse } from "next/server"
 import { neon } from "@neondatabase/serverless"
 
-const sql = neon(process.env.fusconn_DATABASE_URL!)
+const getSql = () => {
+  const connectionString = process.env.fusconn_DATABASE_URL || process.env.DATABASE_URL
+
+  if (!connectionString) {
+    throw new Error('Database connection string is not configured')
+  }
+
+  return neon(connectionString)
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -16,8 +24,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Find user
-    const users = await sql`
-      SELECT username, password, bio, photo_url
+    const users = await getSql()`
+      SELECT username, password, bio, profile_photo AS photo_url
       FROM users
       WHERE username = ${username}
     `
